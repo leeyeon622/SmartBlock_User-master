@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "751250707625",
+    "firebase_url": "https://busanbusmanagment.firebaseio.com",
+    "project_id": "busanbusmanagment",
+    "storage_bucket": "busanbusmanagment.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:751250707625:android:a08a0233f9a0b541",
+        "android_client_info": {
+          "package_name": "com.busanbus.smartblock"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "751250707625-65knsscf4erpumrj590jsk44uartn56e.apps.googleusercontent.com",
+          "client_type": 3
+        },
+        {
+          "client_id": "751250707625-65knsscf4erpumrj590jsk44uartn56e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBd7kFpQ7qhGhlFFYa4ojMe6duGsar2Vz8"
+        }
+      ],
+      "services": {
+        "analytics_service": {
+          "status": 1
+        },
+        "appinvite_service": {
+          "status": 1,
+          "other_platform_oauth_client": []
+        },
+        "ads_service": {
+          "status": 2
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

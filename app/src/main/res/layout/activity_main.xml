@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#ffffff">
+
+    <TextView
+        android:id="@+id/textView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:textColor="#6d5b97"
+        android:textSize="60sp"
+        android:layout_marginBottom="80dp"
+        android:text="@string/title" />
+
+    <TableLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+        <TableRow
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <EditText
+                android:id="@+id/editText_id"
+                android:layout_width="250dp"
+                android:layout_height="wrap_content"
+                android:layout_span="2"
+                android:inputType="textPersonName"
+                android:textSize="20sp"
+                android:hint="아이디"/>
+
+
+        </TableRow>
+
+        <TableRow
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <EditText
+                android:id="@+id/editText_pw"
+                android:layout_width="250dp"
+                android:layout_height="wrap_content"
+                android:layout_span="2"
+                android:textSize="20sp"
+                android:inputType="textPassword"
+                android:hint="비밀번호"/>
+
+        </TableRow>
+
+        <TableRow
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp">
+
+            <Button
+                android:id="@+id/button_signin"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:backgroundTint="#6d5b97"
+                android:textColor="#ffffff"
+                android:textSize="17sp"
+                android:text="로그인" />
+
+            <Button
+                android:id="@+id/button_signup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="5dp"
+                android:backgroundTint="#6d5b97"
+                android:textSize="17sp"
+                android:textColor="#ffffff"
+                android:text="회원가입" />
+
+        </TableRow>
+
+    </TableLayout>
+
+</LinearLayout>
