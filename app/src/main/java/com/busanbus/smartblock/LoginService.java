@@ -1,9 +1,19 @@
 package com.busanbus.smartblock;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.app.Service;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattService;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
@@ -12,13 +22,19 @@ import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.AsyncTask;
+import android.os.Handler;
 import android.os.IBinder;
 import android.preference.PreferenceManager;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.util.Log;
+import android.view.View;
+
+import com.google.android.gms.common.api.GoogleApiClient;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -35,9 +51,9 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     ScreenOnReceiver mScreenOnReceiver;
 
 
-    private final static int fftChunkSize = 4096;
+    private final static int fftChunkSize = 1024;
     private final static int RATE = 44100;
-    public final int BUFFER_SIZE = 4096;
+    public final int BUFFER_SIZE = 1024;
     private short[] mAudioData;
     private AudioRecord mRecorder;
     boolean started = false;
@@ -46,6 +62,10 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     private TimerTask mTask;
     private Timer mTimer;
     ArrayList<Double> mfrequencyList = new ArrayList<>();
+
+    boolean allow_bt = false;
+    boolean allow_location = false;
+    boolean allow_mic = false;
 
 
     private static int CHANNEL_MODE = AudioFormat.CHANNEL_CONFIGURATION_MONO;
@@ -58,6 +78,31 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     public final static int MAX_FREQUENCY = 22050; // 1567.98 HZ of G6 - highest
     // demanded note in the
     // classical repertoire
+
+    //bt ble
+    private final String DEV_NAME = "FUFI";
+    private final String DEV_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb";
+    BluetoothManager btManager;
+    BluetoothAdapter btAdapter;
+    Boolean btScanning = false;
+    BluetoothDevice discoveredDev = null;
+    BluetoothGatt bluetoothGatt = null;
+    String devData = null;
+
+    private Handler mHandler = new Handler();
+    private static final long SCAN_PERIOD = 3000;
+
+
+    public final static String ACTION_GATT_CONNECTED =
+            "com.example.bluetooth.le.ACTION_GATT_CONNECTED";
+    public final static String ACTION_GATT_DISCONNECTED =
+            "com.example.bluetooth.le.ACTION_GATT_DISCONNECTED";
+    public final static String ACTION_GATT_SERVICES_DISCOVERED =
+            "com.example.bluetooth.le.ACTION_GATT_SERVICES_DISCOVERED";
+    public final static String ACTION_DATA_AVAILABLE =
+            "com.example.bluetooth.le.ACTION_DATA_AVAILABLE";
+    public final static String EXTRA_DATA =
+            "com.example.bluetooth.le.EXTRA_DATA";
 
     @Nullable
     @Override
@@ -81,21 +126,31 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
         mAudioData = new short[BUFFER_SIZE];
 
-        mScreenOnReceiver = new ScreenOnReceiver();
+        //bt ble
+        btManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        btAdapter = btManager.getAdapter();
 
-        IntentFilter filter = new IntentFilter();
-        filter.addAction("android.intent.action.SCREEN_ON");
-        filter.addAction("android.intent.action.SCREEN_OFF");
-        registerReceiver(mScreenOnReceiver, filter);
+//        mScreenOnReceiver = new ScreenOnReceiver();
+
+//        IntentFilter filter = new IntentFilter();
+//        filter.addAction("android.intent.action.SCREEN_ON");
+//        filter.addAction("android.intent.action.SCREEN_OFF");
+//        registerReceiver(mScreenOnReceiver, filter);
+
+        checkPermisson();
 
         /*
         check frequency value periodically
          */
-        checkMicPermission();
+
         checkFrequency();
 
 
         PreferenceManager.getDefaultSharedPreferences(this).registerOnSharedPreferenceChangeListener(this);
+
+
+        startScanning();
+
 
     }
 
@@ -174,7 +229,14 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                 mfrequencyList.clear();
 
 
-                startRecord();
+//                startRecord();
+
+                if(discoveredDev == null){
+
+                    startScanning();
+                } else if(bluetoothGatt == null) {
+                    connectToDevice();
+                }
 
             }
         };
@@ -189,15 +251,62 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
             Log.d(TAG, "checkMicPermission : not allow");
 
-            Intent intent = new Intent(this, PermissionReqActivity.class);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
-
             return false;
         }
 
         Log.d(TAG, "checkMicPermission : allow");
 
+
+        return true;
+
+    }
+
+    private boolean checkBtPermisson() {
+
+        if (btAdapter != null && !btAdapter.isEnabled()) {
+
+            Log.d(TAG, "checkBtPermisson : not allow");
+
+
+            return false;
+        }
+
+        Log.d(TAG, "checkBtPermisson : allow");
+        return true;
+    }
+
+    private boolean checkLocationPermission() {
+
+        if (this.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+
+            Log.d(TAG, "checkLocationPermission : not allow");
+
+
+            return false;
+        }
+
+        Log.d(TAG, "checkLocationPermission : allow");
+        return true;
+    }
+
+    private boolean checkPermisson() {
+
+        allow_mic = checkMicPermission();
+        allow_bt = checkBtPermisson();
+        allow_location = checkLocationPermission();
+
+        if(allow_mic == false || allow_bt == false || allow_location == false){
+
+            Intent intent = new Intent(this, PermissionReqActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+
+            Log.d(TAG, "checkPermisson : not allow");
+
+            return false;
+        }
+
+        Log.d(TAG, "checkPermisson : allow");
 
         return true;
 
@@ -371,8 +480,6 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             double best_frequency = 0;
             double bestAmplitude = 0;
 
-
-
             final int min_frequency_fft = (int) Math.round(1.0 * MIN_FREQUENCY
                     * audioDataLength / RATE);
             final int max_frequency_fft = (int) Math.round(1.0 * MAX_FREQUENCY
@@ -418,6 +525,232 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
             return 1;
         }
+    }
+
+    // Device scan callback.
+    private BluetoothAdapter.LeScanCallback leScanCallback = new BluetoothAdapter.LeScanCallback() {
+        @Override
+        public void onLeScan(BluetoothDevice bluetoothDevice, int i, byte[] bytes) {
+            Log.d(TAG, "leScanCallback : Device Name : " + bluetoothDevice.getName());
+
+            if(DEV_NAME.equals(bluetoothDevice.getName())) {
+
+                discoveredDev = bluetoothDevice;
+
+                //stop scanning
+                stopScanning();
+
+                connectToDevice();
+            }
+
+        }
+
+
+    };
+
+
+    // Device connect call back
+    private final BluetoothGattCallback btleGattCallback = new BluetoothGattCallback() {
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic) {
+            // this will get called anytime you perform a read or write characteristic operation
+            Log.d(TAG, "btleGattCallback : onCharacteristicChanged");
+            broadcastUpdate(ACTION_DATA_AVAILABLE, characteristic);
+        }
+
+        @Override
+        public void onConnectionStateChange(final BluetoothGatt gatt, final int status, final int newState) {
+            // this will get called when a device connects or disconnects
+            Log.d(TAG, "btleGattCallback : onConnectionStateChange : state : " + status + " : newState : " + newState);
+            switch (newState) {
+                case BluetoothProfile.STATE_DISCONNECTED:
+                    Log.d(TAG, "btleGattCallback : onConnectionStateChange : STATE_DISCONNECTED");
+                    break;
+                case BluetoothProfile.STATE_CONNECTED:
+                    Log.d(TAG, "btleGattCallback : onConnectionStateChange : STATE_CONNECTED");
+
+                    // discover services and characteristics for this device
+                    if(bluetoothGatt != null)
+                        bluetoothGatt.discoverServices();
+                    else
+                        Log.d(TAG, "btleGattCallback : onConnectionStateChange : bluetoothGatt == null");
+
+                    break;
+                default:
+                    Log.d(TAG, "btleGattCallback : onConnectionStateChange : unknown");
+                    break;
+            }
+        }
+
+        @Override
+        public void onServicesDiscovered(final BluetoothGatt gatt, final int status) {
+            // this will get called after the client initiates a 			BluetoothGatt.discoverServices() call
+            Log.d(TAG, "btleGattCallback : onServicesDiscovered : status : " + status);
+
+            displayGattServices(bluetoothGatt.getServices());
+        }
+
+        @Override
+        // Result of a characteristic read operation
+        public void onCharacteristicRead(BluetoothGatt gatt,
+                                         BluetoothGattCharacteristic characteristic,
+                                         int status) {
+            Log.d(TAG, "btleGattCallback : onCharacteristicRead : status : " + status);
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                broadcastUpdate(ACTION_DATA_AVAILABLE, characteristic);
+            }
+        }
+    };
+
+    public void startScanning() {
+        Log.d(TAG, "startScanning");
+
+
+        if(btScanning == false){
+
+            btScanning = true;
+
+            AsyncTask.execute(startScan);
+
+            mHandler.postDelayed(scanTimeout, SCAN_PERIOD);
+
+        }
+
+
+    }
+
+    Runnable startScan = new Runnable() {
+        @Override
+        public void run() {
+            Log.d(TAG, "startScan : startLeScan");
+            btAdapter.startLeScan(leScanCallback);
+        }
+    };
+
+    Runnable scanTimeout = new Runnable() {
+        @Override
+        public void run() {
+            Log.d(TAG, "scanTimeout : timeout");
+            stopScanning();
+        }
+    };
+
+    public void stopScanning() {
+        Log.d(TAG, "stopScanning");
+
+        if(btScanning == true) {
+
+            btScanning = false;
+            AsyncTask.execute(stopScan);
+        }
+
+
+
+    }
+
+    Runnable stopScan = new Runnable() {
+        @Override
+        public void run() {
+            Log.d(TAG, "startScanning : stopLeScan");
+            btAdapter.stopLeScan(leScanCallback);
+        }
+    };
+
+    public void connectToDevice() {
+        Log.d(TAG, "connectToDevice start");
+
+        if(discoveredDev != null) {
+            bluetoothGatt = discoveredDev.connectGatt(this, false, btleGattCallback);
+        }
+
+        Log.d(TAG, "connectToDevice end");
+    }
+
+    public void disconnectDevice() {
+
+        Log.d(TAG, "disconnectDevice start");
+        if(bluetoothGatt != null) {
+            bluetoothGatt.disconnect();
+            bluetoothGatt = null;
+        }
+
+        Log.d(TAG, "disconnectDevice end");
+    }
+
+    private void broadcastUpdate(final String action,
+                                 final BluetoothGattCharacteristic characteristic) {
+
+        Log.d(TAG, "broadcastUpdate : action : " + action);
+
+        if(ACTION_DATA_AVAILABLE.equals(action)) {
+
+
+
+            final byte[] data = characteristic.getValue();
+
+
+
+            devData = new String(data);
+
+            Log.d(TAG, "broadcastUpdate : devData : " + devData);
+
+        }
+
+    }
+
+    private void displayGattServices(List<BluetoothGattService> gattServices) {
+
+        Log.d(TAG, "displayGattServices ");
+
+
+        if (gattServices == null){
+
+            Log.d(TAG, "displayGattServices : gattServices == null");
+            return;
+        }
+
+
+        BluetoothGattService targetService = null;
+
+        // Loops through available GATT Services.
+        for (BluetoothGattService gattService : gattServices) {
+
+            final String uuid = gattService.getUuid().toString();
+
+
+            if(DEV_UUID.equals(uuid)) {
+                targetService = gattService;
+
+                Log.d(TAG, "displayGattServices : target dev uuid : " + uuid );
+
+                break;
+
+            }
+
+        }
+
+        List<BluetoothGattCharacteristic> gattCharacteristics = targetService.getCharacteristics();
+
+        // Loops through available Characteristics.
+        for (BluetoothGattCharacteristic gattCharacteristic : gattCharacteristics) {
+
+            bluetoothGatt.readCharacteristic(gattCharacteristic);
+            bluetoothGatt.setCharacteristicNotification(gattCharacteristic, true);
+
+
+            final byte[] data = gattCharacteristic.getValue();
+
+            devData = new String(data);
+
+
+            Log.d(TAG, "displayGattServices : devData : " + devData );
+
+
+        }
+
+
+
     }
 
 }

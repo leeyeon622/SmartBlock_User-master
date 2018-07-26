@@ -1,6 +1,8 @@
 package com.busanbus.smartblock;
 
 import android.Manifest;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -25,11 +27,13 @@ public class PermissionReqActivity extends AppCompatActivity {
     private final int PERMISSIONS_OVERLAY = 2;
     private final int PERMISSIONS_GPS = 3;
     private final int PERMISSIONS_MIC = 4;
+    private final static int REQUEST_ENABLE_BT = 5;
 
     boolean allow_overlay = false;
     boolean allow_location = false;
     boolean allow_gps = false;
     boolean allow_mic = false;
+    boolean allow_bt = false;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -42,15 +46,21 @@ public class PermissionReqActivity extends AppCompatActivity {
         boolean allow = checkMic();
 
         if(allow) {
-            allow = checkDrawOverlayPermission();
+            allow = checkBtPermisson();
 
-            if( allow ) {
-                allow = checkLocationPermission();
+            if(allow) {
 
-                if(allow) {
-                    checkGps();
+                allow = checkDrawOverlayPermission();
+
+                if( allow ) {
+                    allow = checkLocationPermission();
+
+                    if(allow) {
+                        checkGps();
+                    }
                 }
             }
+
         }
 
         finishActivity();
@@ -88,7 +98,7 @@ public class PermissionReqActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        Log.d(TAG, "onRequestPermissionsResult");
+        Log.d(TAG, "onRequestPermissionsResult : " + requestCode);
 
         switch (requestCode) {
             case PERMISSIONS_LOCATION: {
@@ -97,9 +107,9 @@ public class PermissionReqActivity extends AppCompatActivity {
                 if (grantResults.length > 0
                         && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
 
-                    Intent svc = new Intent(this, BtService.class);
-                    svc.putExtra("permission_location", true);
-                    startService(svc);
+//                    Intent svc = new Intent(this, BtService.class);
+//                    svc.putExtra("permission_location", true);
+//                    startService(svc);
 
                     allow_location = true;
 
@@ -120,13 +130,20 @@ public class PermissionReqActivity extends AppCompatActivity {
                 if (grantResults.length > 0
                         && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
 
-                    Intent svc = new Intent(this, BtService.class);
-                    svc.putExtra("permission_mic", true);
-                    startService(svc);
+//                    Intent svc = new Intent(this, BtService.class);
+//                    svc.putExtra("permission_mic", true);
+//                    startService(svc);
 
                     allow_mic = true;
 
-                    checkDrawOverlayPermission();
+                    boolean allow = checkDrawOverlayPermission();
+
+                    if(allow) {
+                        allow = checkLocationPermission();
+                        if(allow) {
+                            checkGps();
+                        }
+                    }
 
                     finishActivity();
 
@@ -157,13 +174,16 @@ public class PermissionReqActivity extends AppCompatActivity {
             boolean ok = checkDrawOverlayPermission();
 
             if(ok) {
-                Intent svc = new Intent(this, BtService.class);
-                svc.putExtra("permission_overlay", true);
-                startService(svc);
+//                Intent svc = new Intent(this, BtService.class);
+//                svc.putExtra("permission_overlay", true);
+//                startService(svc);
 
                 allow_overlay = true;
 
-                checkLocationPermission();
+                boolean allow = checkLocationPermission();
+                if(allow){
+                    checkGps();
+                }
 
                 finishActivity();
             }
@@ -175,22 +195,39 @@ public class PermissionReqActivity extends AppCompatActivity {
 
             if(ok) {
 
-                Intent svc = new Intent(this, BtService.class);
-                svc.putExtra("permission_gps", true);
-                startService(svc);
+//                Intent svc = new Intent(this, BtService.class);
+//                svc.putExtra("permission_gps", true);
+//                startService(svc);
 
                 allow_gps = true;
 
                 finishActivity();
 
             }
+        } else if(requestCode == REQUEST_ENABLE_BT) {
+            Log.d(TAG, "REQUEST_ENABLE_BT");
+
+
+            boolean ok = checkBtPermisson();
+
+            if(ok) {
+
+                allow_bt = true;
+
+                boolean allow = checkLocationPermission();
+
+
+                finishActivity();
+
+            }
+
         }
 
 
     }
 
     private void finishActivity() {
-        Log.d(TAG, "finishActivity : " + allow_overlay + " : " + allow_location + " : " + allow_gps + " : " + allow_mic);
+        Log.d(TAG, "finishActivity : " + allow_overlay + " : " + allow_location + " : " + allow_gps + " : " + allow_mic + " : " + allow_bt);
 
         if( allow_overlay == false )
             return;
@@ -202,8 +239,32 @@ public class PermissionReqActivity extends AppCompatActivity {
             return;
 
         if( allow_mic == false )
+            return;
+
+        if(allow_bt == false)
+            return;
 
         finish();
+    }
+
+
+    private boolean checkBtPermisson() {
+
+        BluetoothManager btManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        BluetoothAdapter btAdapter = btManager.getAdapter();
+
+        if (btAdapter != null && !btAdapter.isEnabled()) {
+
+            Log.d(TAG, "checkBtPermisson : not allow");
+
+            Intent enableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableIntent, REQUEST_ENABLE_BT);
+
+            return false;
+        }
+
+        Log.d(TAG, "checkBtPermisson : allow");
+        return true;
     }
 
 
