@@ -80,7 +80,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     // classical repertoire
 
     //bt ble
-    private final String DEV_NAME = "FUFI";
+    private final String DEV_NAME = "T_ISLAND";
     private final String DEV_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb";
     BluetoothManager btManager;
     BluetoothAdapter btAdapter;
@@ -88,6 +88,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     BluetoothDevice discoveredDev = null;
     BluetoothGatt bluetoothGatt = null;
     String devData = null;
+    private boolean bleConnected = false;
 
     private Handler mHandler = new Handler();
     private static final long SCAN_PERIOD = 3000;
@@ -214,7 +215,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             public void run() {
                 Log.d(TAG, "checkFrequency : run : current thread : " + Thread.currentThread());
 
-                if(mfrequencyList.size() > 0) {
+                if(mfrequencyList.size() > 0 || bleConnected) {
                     Log.d(TAG, "checkFrequency : run : frequency size : " + mfrequencyList.size());
                     PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", false).apply();
                     Intent svc = new Intent(LoginService.this, BtService.class);
@@ -549,6 +550,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     };
 
 
+
     // Device connect call back
     private final BluetoothGattCallback btleGattCallback = new BluetoothGattCallback() {
 
@@ -566,9 +568,13 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             switch (newState) {
                 case BluetoothProfile.STATE_DISCONNECTED:
                     Log.d(TAG, "btleGattCallback : onConnectionStateChange : STATE_DISCONNECTED");
+                    bleConnected = false;
+                    disconnectDevice();
                     break;
                 case BluetoothProfile.STATE_CONNECTED:
                     Log.d(TAG, "btleGattCallback : onConnectionStateChange : STATE_CONNECTED");
+
+                    bleConnected = true;
 
                     // discover services and characteristics for this device
                     if(bluetoothGatt != null)
@@ -672,6 +678,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         Log.d(TAG, "disconnectDevice start");
         if(bluetoothGatt != null) {
             bluetoothGatt.disconnect();
+            bluetoothGatt.close();
             bluetoothGatt = null;
         }
 
