@@ -61,6 +61,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
     private TimerTask mTask;
     private Timer mTimer;
+    private TimerTask mTask2;
+    private Timer mTimer2;
     ArrayList<Double> mfrequencyList = new ArrayList<>();
 
     boolean allow_bt = false;
@@ -150,7 +152,12 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         PreferenceManager.getDefaultSharedPreferences(this).registerOnSharedPreferenceChangeListener(this);
 
 
-        startScanning();
+//        startScanning();
+
+//        startRecord();
+
+//        Intent svc = new Intent(LoginService.this, BlockService.class);
+//        startService(svc);
 
 
     }
@@ -213,21 +220,21 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         mTask = new TimerTask() {
             @Override
             public void run() {
-                Log.d(TAG, "checkFrequency : run : current thread : " + Thread.currentThread());
+                Log.d(TAG, "mTask : run : current thread : " + Thread.currentThread());
 
-                if(mfrequencyList.size() > 0 || bleConnected) {
-                    Log.d(TAG, "checkFrequency : run : frequency size : " + mfrequencyList.size());
+                if(bleConnected) {
+                    Log.d(TAG, "mTask : run : bleConnected : " + bleConnected);
                     PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", false).apply();
                     Intent svc = new Intent(LoginService.this, BtService.class);
                     startService(svc);
 
                 } else {
-                    Log.d(TAG, "checkFrequency : run : ");
+                    Log.d(TAG, "mTask : run : not bleConnected");
 
                     PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
                 }
 
-                mfrequencyList.clear();
+//                mfrequencyList.clear();
 
 
 //                startRecord();
@@ -242,8 +249,48 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             }
         };
 
+        mTask2 = new TimerTask() {
+            @Override
+            public void run() {
+                Log.d(TAG, "mTask2 : run : current thread : " + Thread.currentThread());
+
+                if(mfrequencyList.size() > 0) {
+                    Log.d(TAG, "mTask2 : run : frequency size : " + mfrequencyList.size() );
+
+                    for(int i=0; i < mfrequencyList.size(); i++)
+                        Log.d(TAG, "" + mfrequencyList.get(i));
+
+
+//                    PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", false).apply();
+//                    Intent svc = new Intent(LoginService.this, BtService.class);
+//                    startService(svc);
+
+                } else {
+                    Log.d(TAG, "mTask2 : run : no frequency");
+
+//                    PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
+                }
+
+                mfrequencyList.clear();
+
+
+                startRecord();
+
+//                if(discoveredDev == null){
+//
+//                    startScanning();
+//                } else if(bluetoothGatt == null) {
+//                    connectToDevice();
+//                }
+
+            }
+        };
+
         mTimer = new Timer();
-        mTimer.schedule(mTask, 10000, 10000);
+        mTimer.schedule(mTask, 3000, 10000);
+
+        mTimer2 = new Timer();
+        mTimer2.schedule(mTask2, 3000, 10000);
     }
 
     private boolean checkMicPermission() {
@@ -396,7 +443,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
         public int AnalyzeFrequencies(short[] audio_data) {
 
-            Log.d(TAG,"AnalyzeFrequencies ");
+//            Log.d(TAG,"AnalyzeFrequencies ");
 
             if (audio_data.length * 2 < 0) {
                 Log.e(TAG, "awkward fail: " + (audio_data.length * 2));
@@ -417,7 +464,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
         public void DoFFT(double[] data, int length) {
 
-            Log.d(TAG,"DoFFT : length : " + length);
+//            Log.d(TAG,"DoFFT : length : " + length);
 
             long n = length * 2, m;
             int i, j = 1;
@@ -475,7 +522,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
         public int AnalyzeFFT(int audioDataLength, double[] frequencyData) {
 
-            Log.d(TAG,"AnalyzeFFT : audioDataLength : " + audioDataLength);
+//            Log.d(TAG,"AnalyzeFFT : audioDataLength : " + audioDataLength);
 
 
             double best_frequency = 0;
@@ -486,7 +533,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             final int max_frequency_fft = (int) Math.round(1.0 * MAX_FREQUENCY
                     * audioDataLength / RATE);
 
-            Log.d(TAG,"AnalyzeFFT : min_frequency_fft : " + min_frequency_fft + " : max_frequency_fft : " + max_frequency_fft);
+//            Log.d(TAG,"AnalyzeFFT : min_frequency_fft : " + min_frequency_fft + " : max_frequency_fft : " + max_frequency_fft);
 
             //가장 높은 주파수 찾기
             for (int i = min_frequency_fft; i <= max_frequency_fft; i++) {
@@ -517,10 +564,10 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                 }
             }
 
-            Log.d(TAG,"AnalyzeFFT : best_frequency : " + best_frequency);
-            Log.d(TAG,"AnalyzeFFT : bestAmplitude : " + bestAmplitude);
+//            Log.d(TAG,"AnalyzeFFT : best_frequency : " + best_frequency);
+//            Log.d(TAG,"AnalyzeFFT : bestAmplitude : " + bestAmplitude);
 
-            if( best_frequency > 19000 ) {
+            if( best_frequency > 16000 ) {
                 mfrequencyList.add(best_frequency);
             }
 
@@ -617,7 +664,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
             btScanning = true;
 
-            AsyncTask.execute(startScan);
+//            AsyncTask.execute(startScan);
+            btAdapter.startLeScan(leScanCallback);
 
             mHandler.postDelayed(scanTimeout, SCAN_PERIOD);
 
@@ -648,7 +696,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         if(btScanning == true) {
 
             btScanning = false;
-            AsyncTask.execute(stopScan);
+//            AsyncTask.execute(stopScan);
+            btAdapter.stopLeScan(leScanCallback);
         }
 
 
