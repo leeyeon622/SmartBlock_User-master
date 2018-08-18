@@ -2,63 +2,49 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.busanbus.smartblock">
 
-    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- NORMAL permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- SIGNATURE permissions -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- DANGEROUS permissions -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
-        android:name=".GlobalApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/smartblock">
-
-        <meta-data
-            android:name="com.kakao.sdk.AppKey"
-            android:value="@string/kakao_app_key" />
-
-        <meta-data
-            android:name="com.facebook.sdk.ApplicationId"
-            android:value="@string/facebook_app_id"/>
-
-        <activity android:name=".MainActivity">
+        android:theme="@style/AppTheme">
+        <activity android:name=".activity.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".SignUpActivity" />
-	
-	 <activity android:name="com.facebook.FacebookActivity"
-            android:configChanges="keyboard|keyboardHidden|screenLayout|screenSize|orientation"
-            android:label="@string/app_name" />
-
-        <activity android:name=".PermissionReqActivity"
-            android:configChanges="locale|navigation|orientation">
-
-        </activity>
+        <activity android:name=".activity.SignUpActivity" />
 
         <service
-            android:name=".LoginService"
+            android:name=".service.LoginService"
             android:enabled="true"
             android:exported="false" />
 
         <service
-            android:name=".BtService"
+            android:name=".service.BtService"
             android:enabled="true"
             android:exported="false" />
 
         <service
-            android:name=".BlockService"
+            android:name=".service.BlockService"
             android:enabled="true"
             android:exported="false" />
 
@@ -71,7 +57,6 @@
 
             </intent-filter>
         </receiver>
-
 
     </application>
 

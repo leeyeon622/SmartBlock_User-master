@@ -1,7 +1,6 @@
-package com.busanbus.smartblock;
+package com.busanbus.smartblock.service;
 
 import android.Manifest;
-import android.app.AlertDialog;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -13,9 +12,7 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.media.AudioFormat;
@@ -24,19 +21,37 @@ import android.media.MediaRecorder;
 import android.os.AsyncTask;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.RemoteException;
 import android.preference.PreferenceManager;
+import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.util.Log;
-import android.view.View;
 
-import com.google.android.gms.common.api.GoogleApiClient;
-
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
+
+import com.busanbus.smartblock.UserRef;
+import com.busanbus.smartblock.model.UserData;
+import com.busanbus.smartblock.model.UserDriveData;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
+
+import org.altbeacon.beacon.Beacon;
+import org.altbeacon.beacon.BeaconConsumer;
+import org.altbeacon.beacon.BeaconManager;
+import org.altbeacon.beacon.BeaconParser;
+import org.altbeacon.beacon.MonitorNotifier;
+import org.altbeacon.beacon.RangeNotifier;
+import org.altbeacon.beacon.Region;
 
 /*
 1. always alive
@@ -69,6 +84,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     boolean allow_location = false;
     boolean allow_mic = false;
 
+    boolean isLogin = false;
+
 
     private static int CHANNEL_MODE = AudioFormat.CHANNEL_CONFIGURATION_MONO;
     private static int ENCODING = AudioFormat.ENCODING_PCM_16BIT;
@@ -83,6 +100,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
     //bt ble
     private final String DEV_NAME = "T_ISLAND";
+    private final String DEV_NAME1 = "M_ISLAND";
     private final String DEV_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb";
     BluetoothManager btManager;
     BluetoothAdapter btAdapter;
@@ -94,6 +112,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
     private Handler mHandler = new Handler();
     private static final long SCAN_PERIOD = 3000;
+    int bleCheckCount = 0;
 
 
     public final static String ACTION_GATT_CONNECTED =
@@ -125,6 +144,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     public void onCreate() {
         super.onCreate();
 
+        getUserData();
+
         Log.d(TAG, "onCreate : " + " : current thread : " + Thread.currentThread());
 
         mAudioData = new short[BUFFER_SIZE];
@@ -142,6 +163,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
         checkPermisson();
 
+
         /*
         check frequency value periodically
          */
@@ -158,6 +180,68 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
 //        Intent svc = new Intent(LoginService.this, BlockService.class);
 //        startService(svc);
+
+
+    }
+
+    public void getUserData(){
+
+        SharedPreferences pref = getSharedPreferences("pref", MODE_PRIVATE);
+        final String phone = pref.getString("phone", "null");
+
+        DatabaseReference database = FirebaseDatabase.getInstance().getReference();
+        DatabaseReference database_userdata = database.child("UserData");
+
+        database_userdata.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+
+                for(DataSnapshot dsp : dataSnapshot.getChildren()){
+
+                    UserData tmp = dsp.getValue(UserData.class);
+                    if(tmp.getPhone().equals(phone)){
+                        UserRef.userData = tmp;
+                        UserRef.userDataRef = dsp.getRef();
+
+                        Log.e("LoginService", UserRef.userData.getPhone());
+                        break;
+                    }
+
+                }
+
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+
+            }
+        });
+
+        DatabaseReference database_drivedata = database.child("UserDriveData");
+
+        database_drivedata.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+
+                for(DataSnapshot dsp : dataSnapshot.getChildren()){
+
+                    UserDriveData tmp = dsp.getValue(UserDriveData.class);
+                    if(tmp.getPhone().equals(phone)){
+                        UserRef.userDriveData = tmp;
+                        UserRef.userDriveRef = dsp.getRef();
+
+                        break;
+                    }
+
+                }
+
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+
+            }
+        });
 
 
     }
@@ -220,7 +304,12 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         mTask = new TimerTask() {
             @Override
             public void run() {
-                Log.d(TAG, "mTask : run : current thread : " + Thread.currentThread());
+
+                bleCheckCount++;
+
+                Log.d(TAG, "mTask : run : bleCheckCount : " + bleCheckCount);
+
+
 
                 if(bleConnected) {
                     Log.d(TAG, "mTask : run : bleConnected : " + bleConnected);
@@ -228,10 +317,27 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                     Intent svc = new Intent(LoginService.this, BtService.class);
                     startService(svc);
 
+                    if(!isLogin){
+                        UserRef.userData.setTime_login(getCurTime());
+                        UserRef.userDataRef.setValue(UserRef.userData);
+                    }
+
+                    isLogin = true;
+
                 } else {
                     Log.d(TAG, "mTask : run : not bleConnected");
 
                     PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
+
+                    isLogin = false;
+
+                    UserRef.userData.setState_frequency("-");
+                    UserRef.userData.setState_ble("-");
+                    UserRef.userDataRef.setValue(UserRef.userData);
+
+                    UserRef.userDriveData.setTime_logout(getCurTime());
+                    UserRef.userDriveRef.setValue(UserRef.userDriveData);
+
                 }
 
 //                mfrequencyList.clear();
@@ -239,7 +345,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
 //                startRecord();
 
-                if(discoveredDev == null){
+                if(discoveredDev == null || (bleCheckCount%3 == 0 && bleConnected == false) ){
 
                     startScanning();
                 } else if(bluetoothGatt == null) {
@@ -257,18 +363,138 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                 if(mfrequencyList.size() > 0) {
                     Log.d(TAG, "mTask2 : run : frequency size : " + mfrequencyList.size() );
 
-                    for(int i=0; i < mfrequencyList.size(); i++)
-                        Log.d(TAG, "" + mfrequencyList.get(i));
+                    boolean state_apart = false;
+                    boolean state_batt = false;
+                    boolean state_normal = false;
+
+                    boolean final_apart = false;
+                    boolean final_batt = false;
+                    boolean final_normal = false;
+
+//                    ArrayList<Double> arr_apart = new ArrayList<>();
+//                    ArrayList<Double> arr_batt = new ArrayList<>();
+//                    ArrayList<Double> arr_normal = new ArrayList<>();
+//
+//                    for(int i=0; i < mfrequencyList.size(); i++){
+////                        Log.d(TAG, "" + mfrequencyList.get(i));
+//
+//                        if(mfrequencyList.get(i)>12500&&mfrequencyList.get(i)<14500){
+//                            if(arr_apart.contains(mfrequencyList.get(i)))
+//                                state_apart = true;
+//                            else
+//                                arr_apart.add(mfrequencyList.get(i));
+//                        }
+//                        if(mfrequencyList.get(i)>15300&&mfrequencyList.get(i)<18000){
+//                            if(arr_batt.contains(mfrequencyList.get(i)))
+//                                state_batt = true;
+//                            else
+//                                arr_batt.add(mfrequencyList.get(i));
+//                        }
+//                        if(mfrequencyList.get(i)>18300&&mfrequencyList.get(i)<21000){
+//                            if(arr_normal.contains(mfrequencyList.get(i)))
+//                                state_normal = true;
+//                            else
+//                                arr_normal.add(mfrequencyList.get(i));
+//                        }
+//
+//
+//                    }
 
 
-//                    PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", false).apply();
-//                    Intent svc = new Intent(LoginService.this, BtService.class);
-//                    startService(svc);
+                    for(int i=0; i < mfrequencyList.size(); i++){
+                        double freq = mfrequencyList.get(i);
+                        Log.d(TAG, "i : " + i + ", freq : " + freq);
+
+                        mfrequencyList.set(i, 0.0);
+
+                        if(freq>12500.0 && freq<15300.0){
+
+                            state_apart = true;
+//                            Log.d(TAG, "state_apart");
+
+                        } else if(freq>15300.0 && freq<18300.0){
+
+                             state_batt = true;
+//                             Log.d(TAG, "state_batt");
+
+                        } else if(freq>18300.0 && freq<21000.0){
+
+                             state_normal = true;
+//                            Log.d(TAG, "state_normal");
+
+                        }
+
+                        for(int j = i+1;j < mfrequencyList.size();j++) {
+
+                            double freq2 = mfrequencyList.get(j);
+//                            Log.d(TAG, "j : " + j + ", freq2 : " + freq2);
+
+                            if(freq2 == 0.0)
+                                continue;
+
+                            if(freq == freq2) {
+
+                                mfrequencyList.set(j, 0.0);
+
+                                if(state_apart) {
+
+                                    final_apart = true;
+//                                    Log.d(TAG, "final_apart");
+
+                                } else if(state_batt) {
+
+                                    final_batt = true;
+//                                    Log.d(TAG, "final_batt");
+
+                                } else if(state_normal) {
+
+                                    final_normal = true;
+//                                    Log.d(TAG, "final_normal");
+
+                                }
+
+                            }
+
+                        }
+
+                    }
+
+
+
+                    if(isLogin){
+                        if(state_normal){
+                            UserRef.userData.setState_frequency("19500");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        }
+
+                        if(state_apart){
+                            UserRef.userData.setState_frequency("16500");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        }
+
+                        if(state_batt){
+                            UserRef.userData.setState_frequency("13500");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        }
+
+                    }
+
+                    Log.d(TAG, "mTask2 : " + final_apart + " : " + final_batt + " : " + final_normal );
+
+                    if(final_apart || final_batt || final_normal) {
+                        PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", false).apply();
+                        Intent svc = new Intent(LoginService.this, BtService.class);
+                        startService(svc);
+                    } else {
+
+                        PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
+
+                    }
 
                 } else {
                     Log.d(TAG, "mTask2 : run : no frequency");
 
-//                    PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
+                    PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
                 }
 
                 mfrequencyList.clear();
@@ -343,11 +569,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         allow_bt = checkBtPermisson();
         allow_location = checkLocationPermission();
 
-        if(allow_mic == false || allow_bt == false || allow_location == false){
-
-            Intent intent = new Intent(this, PermissionReqActivity.class);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
+        if(!allow_mic || !allow_bt || !allow_location){
 
             Log.d(TAG, "checkPermisson : not allow");
 
@@ -359,6 +581,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         return true;
 
     }
+
 
     class ScreenOnReceiver extends BroadcastReceiver {
         public void onReceive(Context context, Intent intent) {
@@ -567,8 +790,10 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 //            Log.d(TAG,"AnalyzeFFT : best_frequency : " + best_frequency);
 //            Log.d(TAG,"AnalyzeFFT : bestAmplitude : " + bestAmplitude);
 
-            if( best_frequency > 16000 ) {
+            if( best_frequency > 13500 ) {
                 mfrequencyList.add(best_frequency);
+
+
             }
 
             return 1;
@@ -581,7 +806,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         public void onLeScan(BluetoothDevice bluetoothDevice, int i, byte[] bytes) {
             Log.d(TAG, "leScanCallback : Device Name : " + bluetoothDevice.getName());
 
-            if(DEV_NAME.equals(bluetoothDevice.getName())) {
+            if(DEV_NAME.equals(bluetoothDevice.getName()) || DEV_NAME1.equals(bluetoothDevice.getName())) {
 
                 discoveredDev = bluetoothDevice;
 
@@ -716,7 +941,12 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         Log.d(TAG, "connectToDevice start");
 
         if(discoveredDev != null) {
+
+            disconnectDevice();
+
+            Log.d(TAG, "connectToDevice name : " + discoveredDev.getName());
             bluetoothGatt = discoveredDev.connectGatt(this, false, btleGattCallback);
+
         }
 
         Log.d(TAG, "connectToDevice end");
@@ -726,6 +956,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
         Log.d(TAG, "disconnectDevice start");
         if(bluetoothGatt != null) {
+
+            Log.d(TAG, "disconnectDevice start : " + bluetoothGatt.getDevice().getName());
             bluetoothGatt.disconnect();
             bluetoothGatt.close();
             bluetoothGatt = null;
@@ -742,14 +974,28 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         if(ACTION_DATA_AVAILABLE.equals(action)) {
 
 
-
             final byte[] data = characteristic.getValue();
-
-
 
             devData = new String(data);
 
             Log.d(TAG, "broadcastUpdate : devData : " + devData);
+
+            if(devData.equals("AT+MINO0x0000")){
+                UserRef.userData.setState_ble("0000");
+                UserRef.userDataRef.setValue(UserRef.userData);
+            }
+            else if(devData.equals("AT+MINO0x0001")){
+                UserRef.userData.setState_ble("0001");
+                UserRef.userDataRef.setValue(UserRef.userData);
+            }
+            else if(devData.equals("AT+MINO0x0010")){
+                UserRef.userData.setState_ble("0010");
+                UserRef.userDataRef.setValue(UserRef.userData);
+            }
+            else if(devData.equals("AT+MINO0x0011")){
+                UserRef.userData.setState_ble("0011");
+                UserRef.userDataRef.setValue(UserRef.userData);
+            }
 
         }
 
@@ -805,8 +1051,15 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
         }
 
-
-
     }
+
+    private String getCurTime(){
+        SimpleDateFormat mFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        long mNow = System.currentTimeMillis();
+        Date mDate = new Date(mNow);
+        return mFormat.format(mDate);
+    }
+
+
 
 }

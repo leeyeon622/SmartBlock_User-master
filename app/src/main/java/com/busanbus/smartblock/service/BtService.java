@@ -1,4 +1,4 @@
-package com.busanbus.smartblock;
+package com.busanbus.smartblock.service;
 
 import android.Manifest;
 import android.app.Notification;
@@ -23,6 +23,11 @@ import android.support.v4.app.NotificationCompat;
 import android.util.Log;
 import android.widget.Toast;
 
+import com.busanbus.smartblock.R;
+import com.busanbus.smartblock.UserRef;
+import com.busanbus.smartblock.model.UserData;
+import com.busanbus.smartblock.model.UserDriveData;
+
 import org.altbeacon.beacon.Beacon;
 import org.altbeacon.beacon.BeaconConsumer;
 import org.altbeacon.beacon.BeaconManager;
@@ -30,8 +35,10 @@ import org.altbeacon.beacon.BeaconParser;
 import org.altbeacon.beacon.RangeNotifier;
 import org.altbeacon.beacon.Region;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -45,8 +52,7 @@ import java.util.TimerTask;
 public class BtService extends Service implements SharedPreferences.OnSharedPreferenceChangeListener, BeaconConsumer, LocationListener {
 
     private static final String TAG = BtService.class.getSimpleName();
-    private BeaconManager mBeaconMgr;
-    private List<Beacon> mBeaconList = new ArrayList<>();
+
     boolean allow_overlay = false;
     boolean allow_location = false;
     boolean allow_gps = false;
@@ -63,8 +69,6 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
     Notification mNoti = null;
     private final double STAND_STILL = 1.0;
 
-
-
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
@@ -77,6 +81,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
         Log.d(TAG, "onStartCommand : " + flags + ", " + startId);
 
 
+
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
         if( !pm.isScreenOn() ) {
             Log.d(TAG, "screen off : stopSelf");
@@ -85,9 +90,9 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
 
             if(mNoti ==  null ) {
                 mNoti = new NotificationCompat.Builder(this)
-                        .setContentTitle("smart block")
+                        .setContentTitle("SmartBlock")
                         .setTicker("")
-                        .setContentText("")
+                        .setContentText("단말기와 연결됨")
                         .setSmallIcon(R.drawable.ic_launcher_foreground)
                         .setLargeIcon(Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888))
                         .setContentIntent(null)
@@ -129,10 +134,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
         regularPermissionCheck();
 
 
-        /*
-        1. beacon 연결 시도
-         */
-        initBeacon();
+
 
 
         /*
@@ -152,13 +154,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
 
     }
 
-    private void initBeacon() {
-        Log.d(TAG, "initBeacon");
-        mBeaconMgr = BeaconManager.getInstanceForApplication(this);
 
-        mBeaconMgr.getBeaconParsers().add(new BeaconParser().setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24,d:25-25"));
-        mBeaconMgr.bind(this);
-    }
 
     private void regularPermissionCheck() {
         Log.d(TAG, "regularPermissionCheck");
@@ -215,12 +211,21 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
         Log.d(TAG, "stopBlockService");
         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("stop_block_service", false).apply();
         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("stop_block_service", true).apply();
+
+        UserRef.userDriveData.setState_drive("2000");
+        UserRef.userDriveData.setTime_start(getCurTime());
+        UserRef.userDriveRef.setValue(UserRef.userDriveData);
+
     }
 
     private void startBlockService() {
         Log.d(TAG, "startBlockService");
         Intent svc = new Intent(this, BlockService.class);
         startService(svc);
+
+        UserRef.userDriveData.setState_drive("2100");
+        UserRef.userDriveData.setTime_start(getCurTime());
+        UserRef.userDriveRef.setValue(UserRef.userDriveData);
     }
 
     @Override
@@ -231,8 +236,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
 
         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).unregisterOnSharedPreferenceChangeListener(this);
 
-        if(mBeaconMgr != null)
-            mBeaconMgr.unbind(this);
+
 
         if(mTimer != null)
             mTimer.cancel();
@@ -266,27 +270,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
     @Override
     public void onBeaconServiceConnect() {
 
-        Log.d(TAG, "onBeaconServiceConnect");
 
-        mBeaconMgr.setRangeNotifier(new RangeNotifier() {
-            @Override
-            public void didRangeBeaconsInRegion(Collection<Beacon> collection, Region region) {
-                if (mBeaconList.size() > 0) {
-                    mBeaconList.clear();
-                    for (Beacon beacon : collection) {
-
-
-                        Log.d(TAG, " : " + beacon.toString());
-
-                        mBeaconList.add(beacon);
-                    }
-                }
-            }
-        });
-
-        try {
-            mBeaconMgr.startRangingBeaconsInRegion(new Region("myRangingUniqueId", null, null, null));
-        } catch (RemoteException e) {   }
     }
 
     private boolean checkDrawOverlayPermission() {
@@ -348,10 +332,6 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
 
         if( allow_overlay == false || allow_location == false || allow_gps == false ) {
 
-            Intent intent = new Intent(this, PermissionReqActivity.class);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
-
             return false;
         }
 
@@ -397,7 +377,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
 
             }
 
-            Toast.makeText(this, location.getProvider() + "(" +mCount + ")"+ " : "+ "\nCurrent Speed : " + mySpeed, Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, location.getProvider() + "(" +mCount + ")"+ " : "+ "\nCurrent Speed : " + (mySpeed*3.6), Toast.LENGTH_SHORT).show();
         }
 
     }
@@ -438,5 +418,12 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
 
         Log.d(TAG, "registerLocationUpdates : registered : " + mLocationRegistered);
 
+    }
+
+    private String getCurTime(){
+        SimpleDateFormat mFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        long mNow = System.currentTimeMillis();
+        Date mDate = new Date(mNow);
+        return mFormat.format(mDate);
     }
 }

@@ -1,7 +1,4 @@
 <resources>
-    <string name="app_name">SmartBlock</string>
-    <string name="BASE_URL">https://XXXXXX.firebaseio.com</string>
+    <string name="app_name">SmartBlock_User</string>
     <string name="title">Smart\nBlock</string>
-    <string name="kakao_app_key">d96e146bf42c18ab67a1e0f412c6ada6</string>
-    <string name="facebook_app_id">212310412933650</string>
 </resources>

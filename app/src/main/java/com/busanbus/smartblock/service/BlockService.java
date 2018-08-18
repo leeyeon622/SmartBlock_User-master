@@ -1,4 +1,4 @@
-package com.busanbus.smartblock;
+package com.busanbus.smartblock.service;
 
 import android.app.Service;
 import android.content.Context;
@@ -16,6 +16,8 @@ import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+
+import com.busanbus.smartblock.R;
 
 /*
 1. screen block
