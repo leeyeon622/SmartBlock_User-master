@@ -408,7 +408,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                             continue;
 
 
-                        Log.d(TAG, "i : " + i + ", freq : " + freq);
+                        Log.d(TAG, "mTask2 : i : " + i + ", freq : " + freq);
 
                         mfrequencyList.set(i, 0.0);
 
@@ -444,17 +444,21 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                                 if(state_apart) {
 
                                     final_apart = true;
-//                                    Log.d(TAG, "final_apart");
+                                    Log.d(TAG, "mTask2 : final_apart");
 
-                                } else if(state_batt) {
+                                }
+
+                                if(state_batt) {
 
                                     final_batt = true;
-//                                    Log.d(TAG, "final_batt");
+                                    Log.d(TAG, "mTask2 : final_batt");
 
-                                } else if(state_normal) {
+                                }
+
+                                if(state_normal) {
 
                                     final_normal = true;
-//                                    Log.d(TAG, "final_normal");
+                                    Log.d(TAG, "mTask2 : final_normal");
 
                                 }
 
