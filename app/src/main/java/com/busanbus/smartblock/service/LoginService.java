@@ -403,6 +403,11 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
                     for(int i=0; i < mfrequencyList.size(); i++){
                         double freq = mfrequencyList.get(i);
+
+                        if(freq == 0.0)
+                            continue;
+
+
                         Log.d(TAG, "i : " + i + ", freq : " + freq);
 
                         mfrequencyList.set(i, 0.0);
