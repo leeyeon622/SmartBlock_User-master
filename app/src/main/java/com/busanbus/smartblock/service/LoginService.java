@@ -91,6 +91,11 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     private static int ENCODING = AudioFormat.ENCODING_PCM_16BIT;
 
 
+    boolean final_apart = false;
+    boolean final_batt = false;
+    boolean final_normal = false;
+
+
     public final static int MIN_FREQUENCY = 8500; // 49.0 HZ of G1 - lowest
     // note
     // for crazy Russian choir.
@@ -327,7 +332,10 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                 } else {
                     Log.d(TAG, "mTask : run : not bleConnected");
 
-                    PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
+                    Log.d(TAG, "mTask : run : " + final_apart + " : " + final_batt + " : " + final_normal);
+
+                    if(final_apart == false && final_batt == false && final_normal == false)
+                        PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
 
                     isLogin = false;
 
@@ -360,6 +368,10 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             public void run() {
                 Log.d(TAG, "mTask2 : run : current thread : " + Thread.currentThread());
 
+                final_apart = false;
+                final_batt = false;
+                final_normal = false;
+
                 if(mfrequencyList.size() > 0) {
                     Log.d(TAG, "mTask2 : run : frequency size : " + mfrequencyList.size() );
 
@@ -367,9 +379,6 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                     boolean state_batt = false;
                     boolean state_normal = false;
 
-                    boolean final_apart = false;
-                    boolean final_batt = false;
-                    boolean final_normal = false;
 
 //                    ArrayList<Double> arr_apart = new ArrayList<>();
 //                    ArrayList<Double> arr_batt = new ArrayList<>();
@@ -471,17 +480,17 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
 
                     if(isLogin){
-                        if(state_normal){
+                        if(final_normal){
                             UserRef.userData.setState_frequency("19500");
                             UserRef.userDataRef.setValue(UserRef.userData);
                         }
 
-                        if(state_apart){
+                        if(final_apart){
                             UserRef.userData.setState_frequency("16500");
                             UserRef.userDataRef.setValue(UserRef.userData);
                         }
 
-                        if(state_batt){
+                        if(final_batt){
                             UserRef.userData.setState_frequency("13500");
                             UserRef.userDataRef.setValue(UserRef.userData);
                         }
@@ -496,14 +505,20 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                         startService(svc);
                     } else {
 
-                        PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
+                        Log.d(TAG, "mTask2 : ble connected : " + bleConnected);
+
+                        if(bleConnected == false)
+                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
 
                     }
 
                 } else {
                     Log.d(TAG, "mTask2 : run : no frequency");
 
-                    PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
+                    Log.d(TAG, "mTask2 : ble connected : " + bleConnected);
+
+                    if(bleConnected == false)
+                        PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
                 }
 
                 mfrequencyList.clear();
