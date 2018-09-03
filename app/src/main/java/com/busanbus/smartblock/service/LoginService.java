@@ -32,6 +32,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -59,7 +60,7 @@ import org.altbeacon.beacon.Region;
 3. permission check
  */
 
-public class LoginService extends Service implements SharedPreferences.OnSharedPreferenceChangeListener {
+public class LoginService extends Service implements SharedPreferences.OnSharedPreferenceChangeListener, BeaconConsumer {
 
     private static final String TAG = LoginService.class.getSimpleName();
 
@@ -120,6 +121,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     int bleCheckCount = 0;
 
 
+
     public final static String ACTION_GATT_CONNECTED =
             "com.example.bluetooth.le.ACTION_GATT_CONNECTED";
     public final static String ACTION_GATT_DISCONNECTED =
@@ -130,6 +132,20 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             "com.example.bluetooth.le.ACTION_DATA_AVAILABLE";
     public final static String EXTRA_DATA =
             "com.example.bluetooth.le.EXTRA_DATA";
+
+
+    /*beacon*/
+    private BeaconManager beaconManager;
+
+    String IBEACON_LAYOUT = "m:0-3=4c000215,i:4-19,i:20-21,i:22-23,p:24-24";
+    String ALTBEACON_LAYOUT = BeaconParser.ALTBEACON_LAYOUT;
+    String EDDYSTONE_UID_LAYOUT = BeaconParser.EDDYSTONE_UID_LAYOUT;
+    String EDDYSTONE_URL_LAYOUT = BeaconParser.EDDYSTONE_URL_LAYOUT;
+    String EDDYSTONE_TLM_LAYOUT = BeaconParser.EDDYSTONE_TLM_LAYOUT;
+
+    String target_uuid = "74278bda-b644-4520-8f0c-720eaf059935";
+
+    private boolean beaconConnected = false;
 
     @Nullable
     @Override
@@ -158,6 +174,17 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         //bt ble
         btManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         btAdapter = btManager.getAdapter();
+
+        //beacon
+        beaconManager = BeaconManager.getInstanceForApplication(this);
+
+        beaconManager.getBeaconParsers().add(new BeaconParser().setBeaconLayout(IBEACON_LAYOUT));
+//        beaconManager.getBeaconParsers().add(new BeaconParser().setBeaconLayout(ALTBEACON_LAYOUT));
+        //beaconManager.getBeaconParsers().add(new BeaconParser().setBeaconLayout(EDDYSTONE_URL_LAYOUT));
+        //beaconManager.getBeaconParsers().add(new BeaconParser().setBeaconLayout(EDDYSTONE_TLM_LAYOUT));
+
+        beaconManager.setForegroundScanPeriod(3000l);
+        beaconManager.bind(this);
 
 //        mScreenOnReceiver = new ScreenOnReceiver();
 
@@ -257,6 +284,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
         Log.d(TAG, "onDestroy");
 
+        beaconManager.unbind(this);
+
         PreferenceManager.getDefaultSharedPreferences(this).unregisterOnSharedPreferenceChangeListener(this);
 
         if(mScreenOnReceiver != null) {
@@ -310,14 +339,14 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             @Override
             public void run() {
 
-                bleCheckCount++;
+//                bleCheckCount++;
 
-                Log.d(TAG, "mTask : run : bleCheckCount : " + bleCheckCount);
+//                Log.d(TAG, "mTask : run : bleCheckCount : " + bleCheckCount);
+                Log.d(TAG, "mTask : run : beaconConnected : " + beaconConnected);
 
 
-
-                if(bleConnected) {
-                    Log.d(TAG, "mTask : run : bleConnected : " + bleConnected);
+                if(beaconConnected) {
+                    Log.d(TAG, "mTask : run : beaconConnected : " + beaconConnected);
                     PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", false).apply();
                     Intent svc = new Intent(LoginService.this, BtService.class);
                     startService(svc);
@@ -330,7 +359,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                     isLogin = true;
 
                 } else {
-                    Log.d(TAG, "mTask : run : not bleConnected");
+                    Log.d(TAG, "mTask : run : not beaconConnected");
 
                     Log.d(TAG, "mTask : run : " + final_apart + " : " + final_batt + " : " + final_normal);
 
@@ -353,12 +382,15 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
 //                startRecord();
 
-                if(discoveredDev == null || (bleCheckCount%3 == 0 && bleConnected == false) ){
+                beaconManager.unbind(LoginService.this);
 
-                    startScanning();
-                } else if(bluetoothGatt == null) {
-                    connectToDevice();
-                }
+                beaconManager.bind(LoginService.this);
+//                if(discoveredDev == null || (bleCheckCount%3 == 0 && bleConnected == false) ){
+//
+//                    startScanning();
+//                } else if(bluetoothGatt == null) {
+//                    connectToDevice();
+//                }
 
             }
         };
@@ -505,9 +537,9 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                         startService(svc);
                     } else {
 
-                        Log.d(TAG, "mTask2 : ble connected : " + bleConnected);
+                        Log.d(TAG, "mTask2 :  beaconConnected : " + beaconConnected);
 
-                        if(bleConnected == false)
+                        if(beaconConnected == false)
                             PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
 
                     }
@@ -515,9 +547,9 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                 } else {
                     Log.d(TAG, "mTask2 : run : no frequency");
 
-                    Log.d(TAG, "mTask2 : ble connected : " + bleConnected);
+                    Log.d(TAG, "mTask2 : beaconConnected : " + beaconConnected);
 
-                    if(bleConnected == false)
+                    if(beaconConnected == false)
                         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
                 }
 
@@ -603,6 +635,83 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         Log.d(TAG, "checkPermisson : allow");
 
         return true;
+
+    }
+
+    @Override
+    public void onBeaconServiceConnect() {
+
+        Log.d(TAG, "onBeaconServiceConnect");
+
+        beaconManager.addRangeNotifier(new RangeNotifier() {
+
+
+            @Override
+            public void didRangeBeaconsInRegion(Collection<Beacon> beacons, Region region) {
+
+                Log.d(TAG, "didRangeBeaconsInRegion : beacon size : " + beacons.size());
+
+
+                if (beacons.size() > 0) {
+
+                    Iterator it = beacons.iterator();
+
+                    while(it.hasNext()) {
+
+                        Beacon b = (Beacon)it.next();
+
+                        Log.d(TAG, "to string : " + b.toString());
+
+                        String uuid = b.getId1().toString();
+
+                        Log.d(TAG,  "uuid : " + uuid);
+
+                        if(target_uuid.equals(uuid)) {
+
+                            beaconConnected = true;
+
+                            Log.d(TAG,  " beacon connected ");
+
+
+                            String miner = b.getId3().toString();
+
+                            Log.d(TAG,  "miner : " + miner);
+
+
+                            if(miner.equals("256")){
+                                UserRef.userData.setState_ble("0000");
+                                UserRef.userDataRef.setValue(UserRef.userData);
+                            }
+                            else if(miner.equals("257")){
+                                UserRef.userData.setState_ble("0001");
+                                UserRef.userDataRef.setValue(UserRef.userData);
+                            }
+                            else if(miner.equals("272")){
+                                UserRef.userData.setState_ble("0010");
+                                UserRef.userDataRef.setValue(UserRef.userData);
+                            }
+                            else if(miner.equals("273")){
+                                UserRef.userData.setState_ble("0011");
+                                UserRef.userDataRef.setValue(UserRef.userData);
+                            }
+
+                        }
+
+
+
+
+                    }
+                }
+            }
+
+
+        });
+
+        try {
+            beaconManager.startRangingBeaconsInRegion(new Region("myRangingUniqueId", null, null, null));
+        } catch (RemoteException e) {
+            Log.d(TAG, e.toString());
+        }
 
     }
 
