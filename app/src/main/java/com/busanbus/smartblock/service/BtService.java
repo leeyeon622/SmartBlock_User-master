@@ -83,10 +83,10 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
 
 
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-        if( !pm.isScreenOn() ) {
-            Log.d(TAG, "screen off : stopSelf");
-            stopSelf();
-        } else {
+        //if( !pm.isScreenOn() ) {
+        //    Log.d(TAG, "screen off : stopSelf");
+        //    stopSelf();
+        //} else {
 
             if(mNoti ==  null ) {
                 mNoti = new NotificationCompat.Builder(this)
@@ -103,7 +103,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
 
             }
 
-        }
+        //}
 
 
 
@@ -164,6 +164,8 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
                 Log.d(TAG, "regularPermissionCheck timeout");
                 boolean allow = checkPermission();
                 if(allow == false) {
+                    String reason = "permission is not allowed";
+                    PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
                     stopBlockService();
                 } else {
                     /*
@@ -183,8 +185,17 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
                         startBlockService();
 
                     } else {
+                        String reason = "speed is lower than limit";
+                        PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
                         stopBlockService();
                     }
+
+                    StringBuilder debugInfo = new StringBuilder("speed info: \n");
+                    debugInfo.append("mySpeed: " + mySpeed + " \n")
+                            .append("speed array: " + mSpeedList.toString());
+
+
+                    PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("speed_info", debugInfo.toString()).apply();
 
 
 
@@ -204,7 +215,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
         };
 
         mTimer = new Timer();
-        mTimer.schedule(mTask, 10000, 10000);
+        mTimer.schedule(mTask, 5000, 10000);
     }
 
     private void stopBlockService() {
@@ -212,9 +223,14 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("stop_block_service", false).apply();
         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("stop_block_service", true).apply();
 
-        UserRef.userDriveData.setState_drive("2000");
-        UserRef.userDriveData.setTime_start(getCurTime());
-        UserRef.userDriveRef.setValue(UserRef.userDriveData);
+
+        if(UserRef.allowUserDrivingUpdate) {
+
+            UserRef.userDriveData.setState_drive("2000");
+            UserRef.userDriveData.setTime_start(getCurTime());
+            UserRef.userDriveRef.setValue(UserRef.userDriveData);
+        }
+
 
     }
 
@@ -223,9 +239,13 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
         Intent svc = new Intent(this, BlockService.class);
         startService(svc);
 
-        UserRef.userDriveData.setState_drive("2100");
-        UserRef.userDriveData.setTime_start(getCurTime());
-        UserRef.userDriveRef.setValue(UserRef.userDriveData);
+        if(UserRef.allowUserDrivingUpdate) {
+
+            UserRef.userDriveData.setState_drive("2100");
+            UserRef.userDriveData.setTime_start(getCurTime());
+            UserRef.userDriveRef.setValue(UserRef.userDriveData);
+        }
+
     }
 
     @Override
@@ -341,12 +361,14 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
     @Override
     public void onLocationChanged(Location location) {
 
+
         Log.d(TAG, "onLocationChanged");
 
         if (location != null) {
-            mCount++;
+            //mCount++;
             Log.d(TAG, ": " + location.getProvider());
             mySpeed = location.getSpeed();
+            //mySpeed = 10.0;
 
             Thread th = Thread.currentThread();
             Log.d(TAG, "onLocationChanged thread info : " + th.toString());
@@ -354,7 +376,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
             mLocationRunning = true;
 
             mSpeedList.add(mySpeed);
-
+            //mSpeedList.add(10.0);
 
             if(mSpeedList.size() > 0) {
 

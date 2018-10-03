@@ -10,5 +10,6 @@ public class UserRef {
     public static UserData userData;
     public static DatabaseReference userDriveRef;
     public static UserDriveData userDriveData;
+    public static boolean allowUserDrivingUpdate = false;
 
 }

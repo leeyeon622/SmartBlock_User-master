@@ -110,13 +110,29 @@ public class SignUpActivity extends AppCompatActivity {
 
                 Log.d(TAG, "btn_phoneNumber_auth : onClick");
 
+                String phone = null;
+
                 if(mMyPhNumber == null) {
                     getMyPhoneNumber();
                     return;
+                } else {
+                    if(!mMyPhNumber.substring(0,1).equals("+")){
+                        phone = "+82" + mMyPhNumber;
+                    } else {
+                        phone = mMyPhNumber;
+                    }
+
                 }
 
+                if(checkDulpicatedPhone(phone)) {
+                    Toast.makeText(SignUpActivity.this, "이미 등록된 번호입니다.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                Log.d(TAG, "request authentication phone : " + phone);
+
                 PhoneAuthProvider.getInstance().verifyPhoneNumber(
-                        mMyPhNumber,        // Phone number to verify
+                        phone,        // Phone number to verify
                         60,                 // Timeout duration
                         TimeUnit.SECONDS,   // Unit of timeout
                         SignUpActivity.this,               // Activity (for callback binding)
@@ -164,6 +180,24 @@ public class SignUpActivity extends AppCompatActivity {
             }
         };
 
+    }
+
+    private boolean checkDulpicatedPhone(String phone) {
+
+        boolean ret = false;
+
+        for(UserData user : userData) {
+
+            Log.d(TAG, "user phone : " + user.getPhone()  + " phone : " + phone + " myphone : " + mMyPhNumber);
+
+            if(user.getPhone().contains(mMyPhNumber)) {
+                ret = true;
+                break;
+            }
+
+        }
+
+        return ret;
     }
 
     private void getUserData(){
@@ -216,6 +250,10 @@ public class SignUpActivity extends AppCompatActivity {
 
             mMyPhNumber = telMgr.getLine1Number();
 
+            if(mMyPhNumber.substring(0,1).equals("+")) {
+                mMyPhNumber = mMyPhNumber.replace("+82", "0");
+            }
+
             Log.d(TAG, "getMyPhoneNumber :  mMyPhNumber : " + mMyPhNumber);
 
         }catch(Exception e){
@@ -223,11 +261,6 @@ public class SignUpActivity extends AppCompatActivity {
         }
 
 
-        if(mMyPhNumber!=null){
-            if(!mMyPhNumber.substring(0,1).equals("+")){
-                mMyPhNumber = "+82" + mMyPhNumber;
-            }
-        }
 
         EditText edit = findViewById(R.id.editText_phone);
         edit.setText(mMyPhNumber);

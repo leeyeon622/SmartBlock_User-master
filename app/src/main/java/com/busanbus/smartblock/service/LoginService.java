@@ -15,6 +15,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.PixelFormat;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
@@ -27,6 +28,11 @@ import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.util.Log;
+import android.view.Gravity;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -37,7 +43,9 @@ import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import com.busanbus.smartblock.R;
 import com.busanbus.smartblock.UserRef;
+import com.busanbus.smartblock.activity.MainActivity;
 import com.busanbus.smartblock.model.UserData;
 import com.busanbus.smartblock.model.UserDriveData;
 import com.google.firebase.database.DataSnapshot;
@@ -86,7 +94,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     boolean allow_mic = false;
 
     boolean isLogin = false;
-
+    boolean allowUserDataUpdate = false;
+    boolean allowUserDrivingUpdate = false;
 
     private static int CHANNEL_MODE = AudioFormat.CHANNEL_CONFIGURATION_MONO;
     private static int ENCODING = AudioFormat.ENCODING_PCM_16BIT;
@@ -115,6 +124,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     BluetoothGatt bluetoothGatt = null;
     String devData = null;
     private boolean bleConnected = false;
+    ArrayList<Boolean> mBeaconConnectList = new ArrayList<>();
+    private String mMinor = "-";
 
     private Handler mHandler = new Handler();
     private static final long SCAN_PERIOD = 3000;
@@ -147,6 +158,11 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
     private boolean beaconConnected = false;
 
+    private View debugView;
+    private WindowManager wm;
+    private TextView debugInfo;
+    private TextView stopReason;
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
@@ -164,6 +180,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     @Override
     public void onCreate() {
         super.onCreate();
+
+        UserRef ref = new UserRef();
 
         getUserData();
 
@@ -183,8 +201,9 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         //beaconManager.getBeaconParsers().add(new BeaconParser().setBeaconLayout(EDDYSTONE_URL_LAYOUT));
         //beaconManager.getBeaconParsers().add(new BeaconParser().setBeaconLayout(EDDYSTONE_TLM_LAYOUT));
 
-        beaconManager.setForegroundScanPeriod(3000l);
+        beaconManager.setForegroundScanPeriod(1000l);
         beaconManager.bind(this);
+
 
 //        mScreenOnReceiver = new ScreenOnReceiver();
 
@@ -213,6 +232,33 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 //        Intent svc = new Intent(LoginService.this, BlockService.class);
 //        startService(svc);
 
+        //addDebugView();
+
+    }
+
+    private void addDebugView() {
+
+        Log.d(TAG, "addDebugView");
+
+        wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+
+        final WindowManager.LayoutParams params =
+                new WindowManager.LayoutParams(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.WRAP_CONTENT,
+                        WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                        PixelFormat.TRANSLUCENT);
+
+        params.gravity = Gravity.CENTER | Gravity.START;
+        params.x = 0;
+        params.y = 0;
+
+        debugView = ((LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE)).inflate(R.layout.debug_view, null);
+        debugInfo = debugView.findViewById(R.id.debug_info);
+        stopReason = debugView.findViewById(R.id.stop_reason);
+
+        wm.addView(debugView, params);
 
     }
 
@@ -236,6 +282,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                         UserRef.userDataRef = dsp.getRef();
 
                         Log.e("LoginService", UserRef.userData.getPhone());
+                        allowUserDataUpdate = true;
                         break;
                     }
 
@@ -261,6 +308,9 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                     if(tmp.getPhone().equals(phone)){
                         UserRef.userDriveData = tmp;
                         UserRef.userDriveRef = dsp.getRef();
+
+                        allowUserDrivingUpdate = true;
+                        UserRef.allowUserDrivingUpdate = true;
 
                         break;
                     }
@@ -298,6 +348,18 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
 
         Log.d(TAG, "onSharedPreferenceChanged : " + key );
+
+        if("speed_info".equals(key)) {
+
+            String info = sharedPreferences.getString(key, "error");
+            //debugInfo.setText(info);
+
+        }
+
+        if("stop_reason".equals(key)) {
+            String info = sharedPreferences.getString(key, "error");
+            //stopReason.setText(info);
+        }
 
 
 //        Intent svc = new Intent(this, BtService.class);
@@ -339,22 +401,61 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             @Override
             public void run() {
 
+                checkPermisson();
+
 //                bleCheckCount++;
 
-//                Log.d(TAG, "mTask : run : bleCheckCount : " + bleCheckCount);
-                Log.d(TAG, "mTask : run : beaconConnected : " + beaconConnected);
+                Log.d(TAG, "mTask : run : thead " + Thread.currentThread());
+                //Log.d(TAG, "mTask : run : beaconConnected : " + beaconConnected);
 
+
+                for(int i = 0; i < mBeaconConnectList.size(); i++) {
+                    beaconConnected = mBeaconConnectList.get(i);
+                    if(beaconConnected == true) break;
+                }
 
                 if(beaconConnected) {
                     Log.d(TAG, "mTask : run : beaconConnected : " + beaconConnected);
                     PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", false).apply();
+                    String reason = "none";
+                    PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
                     Intent svc = new Intent(LoginService.this, BtService.class);
                     startService(svc);
 
-                    if(!isLogin){
-                        UserRef.userData.setTime_login(getCurTime());
-                        UserRef.userDataRef.setValue(UserRef.userData);
+                    if(allowUserDataUpdate) {
+
+                        if(!isLogin){
+                            UserRef.userData.setTime_login(getCurTime());
+                            UserRef.userDataRef.setValue(UserRef.userData);
+
+                        }
+
+                        if(allowUserDrivingUpdate) {
+                            UserRef.userDriveData.setTime_logout("-");
+                            UserRef.userDriveRef.setValue(UserRef.userDriveData);
+                        }
+
+
+                        if(mMinor.equals("256")){
+                            UserRef.userData.setState_ble("0000");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        }
+                        else if(mMinor.equals("257")){
+                            UserRef.userData.setState_ble("0001");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        }
+                        else if(mMinor.equals("272")){
+                            UserRef.userData.setState_ble("0010");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        }
+                        else if(mMinor.equals("273")){
+                            UserRef.userData.setState_ble("0011");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        }
+
                     }
+
+
 
                     isLogin = true;
 
@@ -363,28 +464,40 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
                     Log.d(TAG, "mTask : run : " + final_apart + " : " + final_batt + " : " + final_normal);
 
-                    if(final_apart == false && final_batt == false && final_normal == false)
+                    if((final_apart == false) && (final_batt == false) && (final_normal == false)) {
+
                         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
+                        String reason = "beacon is not connected && frequency is out of scope";
+                        PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
+                    }
 
                     isLogin = false;
 
-                    UserRef.userData.setState_frequency("-");
-                    UserRef.userData.setState_ble("-");
-                    UserRef.userDataRef.setValue(UserRef.userData);
+                    if(allowUserDataUpdate) {
+                        UserRef.userData.setState_frequency("-");
+                        UserRef.userData.setState_ble("-");
+                        UserRef.userDataRef.setValue(UserRef.userData);
 
-                    UserRef.userDriveData.setTime_logout(getCurTime());
-                    UserRef.userDriveRef.setValue(UserRef.userDriveData);
+
+                    }
+
+                    if(allowUserDrivingUpdate) {
+                        UserRef.userDriveData.setTime_logout(getCurTime());
+                        UserRef.userDriveRef.setValue(UserRef.userDriveData);
+                    }
 
                 }
+
+                mBeaconConnectList.clear();
 
 //                mfrequencyList.clear();
 
 
 //                startRecord();
 
-                beaconManager.unbind(LoginService.this);
+                //beaconManager.unbind(LoginService.this);
 
-                beaconManager.bind(LoginService.this);
+                //beaconManager.bind(LoginService.this);
 //                if(discoveredDev == null || (bleCheckCount%3 == 0 && bleConnected == false) ){
 //
 //                    startScanning();
@@ -398,14 +511,19 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         mTask2 = new TimerTask() {
             @Override
             public void run() {
-                Log.d(TAG, "mTask2 : run : current thread : " + Thread.currentThread());
+                Log.d(TAG, "mTask2 : run : thread : " + Thread.currentThread());
 
                 final_apart = false;
                 final_batt = false;
                 final_normal = false;
+                boolean found = false;
 
                 if(mfrequencyList.size() > 0) {
                     Log.d(TAG, "mTask2 : run : frequency size : " + mfrequencyList.size() );
+
+                    //for(int i=0;i < mfrequencyList.size(); i++) {
+                    //    Log.d(TAG, "mTask2 : run : frequency : " + mfrequencyList.get(i) );
+                    //}
 
                     boolean state_apart = false;
                     boolean state_batt = false;
@@ -445,35 +563,43 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                     for(int i=0; i < mfrequencyList.size(); i++){
                         double freq = mfrequencyList.get(i);
 
+                        Log.d(TAG, "mTask2 : i : " + i + ", freq : " + freq);
+
+                        state_apart = false;
+                        state_batt = false;
+                        state_normal = false;
+
                         if(freq == 0.0)
                             continue;
-
-
-                        Log.d(TAG, "mTask2 : i : " + i + ", freq : " + freq);
 
                         mfrequencyList.set(i, 0.0);
 
                         if(freq>12500.0 && freq<15300.0){
 
                             state_apart = true;
-//                            Log.d(TAG, "state_apart");
+                            Log.d(TAG, "mTask2 : state_apart");
 
                         } else if(freq>15300.0 && freq<18300.0){
 
                              state_batt = true;
-//                             Log.d(TAG, "state_batt");
+                             Log.d(TAG, "mTask2 : state_batt");
 
-                        } else if(freq>18300.0 && freq<21000.0){
+                        } else if(freq>18300.0 && freq<22000.0){
 
                              state_normal = true;
-//                            Log.d(TAG, "state_normal");
+                            Log.d(TAG, "mTask2 : state_normal");
 
+                        } else {
+                            Log.d(TAG, "mTask2 : out of bound");
+                            continue;
                         }
+
+                        int count = 0;
 
                         for(int j = i+1;j < mfrequencyList.size();j++) {
 
                             double freq2 = mfrequencyList.get(j);
-//                            Log.d(TAG, "j : " + j + ", freq2 : " + freq2);
+                            Log.d(TAG, "mTask2 : i : " + i + ", freq : " + freq + ", j : " + j + ", freq2 : " + freq2 + ", count : " + count);
 
                             if(freq2 == 0.0)
                                 continue;
@@ -482,27 +608,63 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
                                 mfrequencyList.set(j, 0.0);
 
+                                count++;
+
+                                if(count < 5)
+                                    continue;
+
                                 if(state_apart) {
 
                                     final_apart = true;
+                                    found = true;
                                     Log.d(TAG, "mTask2 : final_apart");
+                                    break;
 
                                 }
 
                                 if(state_batt) {
 
                                     final_batt = true;
+                                    found = true;
                                     Log.d(TAG, "mTask2 : final_batt");
+                                    break;
 
                                 }
 
                                 if(state_normal) {
 
                                     final_normal = true;
+                                    found = true;
                                     Log.d(TAG, "mTask2 : final_normal");
+                                    break;
 
                                 }
 
+                            }
+
+                        }
+
+                        if(found)
+                            break;
+
+                    }
+
+
+                    if(allowUserDataUpdate) {
+                        if(isLogin){
+                            if(final_normal){
+                                UserRef.userData.setState_frequency("19500");
+                                UserRef.userDataRef.setValue(UserRef.userData);
+                            }
+
+                            if(final_apart){
+                                UserRef.userData.setState_frequency("16500");
+                                UserRef.userDataRef.setValue(UserRef.userData);
+                            }
+
+                            if(final_batt){
+                                UserRef.userData.setState_frequency("13500");
+                                UserRef.userDataRef.setValue(UserRef.userData);
                             }
 
                         }
@@ -511,36 +673,23 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
 
 
-                    if(isLogin){
-                        if(final_normal){
-                            UserRef.userData.setState_frequency("19500");
-                            UserRef.userDataRef.setValue(UserRef.userData);
-                        }
-
-                        if(final_apart){
-                            UserRef.userData.setState_frequency("16500");
-                            UserRef.userDataRef.setValue(UserRef.userData);
-                        }
-
-                        if(final_batt){
-                            UserRef.userData.setState_frequency("13500");
-                            UserRef.userDataRef.setValue(UserRef.userData);
-                        }
-
-                    }
-
                     Log.d(TAG, "mTask2 : " + final_apart + " : " + final_batt + " : " + final_normal );
 
                     if(final_apart || final_batt || final_normal) {
                         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", false).apply();
+                        String reason = "none";
+                        PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
                         Intent svc = new Intent(LoginService.this, BtService.class);
                         startService(svc);
                     } else {
 
-                        Log.d(TAG, "mTask2 :  beaconConnected : " + beaconConnected);
+                            Log.d(TAG, "mTask2 :  beaconConnected : " + beaconConnected);
 
-                        if(beaconConnected == false)
+                        if(beaconConnected == false) {
                             PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
+                            String reason = "frequency is out of scope && beacon is not connected";
+                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
+                        }
 
                     }
 
@@ -549,8 +698,11 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
                     Log.d(TAG, "mTask2 : beaconConnected : " + beaconConnected);
 
-                    if(beaconConnected == false)
+                    if(beaconConnected == false) {
                         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
+                        String reason = "there is no frequency && beacon is not connected";
+                        PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
+                    }
                 }
 
                 mfrequencyList.clear();
@@ -580,6 +732,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
 
             Log.d(TAG, "checkMicPermission : not allow");
+            Intent intent = new Intent(LoginService.this, MainActivity.class);
+            startActivity(intent);
 
             return false;
         }
@@ -597,6 +751,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
             Log.d(TAG, "checkBtPermisson : not allow");
 
+            Intent intent = new Intent(LoginService.this, MainActivity.class);
+            startActivity(intent);
 
             return false;
         }
@@ -610,7 +766,8 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         if (this.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
 
             Log.d(TAG, "checkLocationPermission : not allow");
-
+            Intent intent = new Intent(LoginService.this, MainActivity.class);
+            startActivity(intent);
 
             return false;
         }
@@ -643,6 +800,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
         Log.d(TAG, "onBeaconServiceConnect");
 
+        beaconManager.removeAllRangeNotifiers();
         beaconManager.addRangeNotifier(new RangeNotifier() {
 
 
@@ -650,7 +808,6 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             public void didRangeBeaconsInRegion(Collection<Beacon> beacons, Region region) {
 
                 Log.d(TAG, "didRangeBeaconsInRegion : beacon size : " + beacons.size());
-
 
                 if (beacons.size() > 0) {
 
@@ -668,39 +825,26 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
                         if(target_uuid.equals(uuid)) {
 
-                            beaconConnected = true;
+                            //beaconConnected = true;
+                            mBeaconConnectList.add(true);
 
                             Log.d(TAG,  " beacon connected ");
 
 
-                            String miner = b.getId3().toString();
+                            mMinor = b.getId3().toString();
 
-                            Log.d(TAG,  "miner : " + miner);
+                            Log.d(TAG,  "miner : " + mMinor);
 
 
-                            if(miner.equals("256")){
-                                UserRef.userData.setState_ble("0000");
-                                UserRef.userDataRef.setValue(UserRef.userData);
-                            }
-                            else if(miner.equals("257")){
-                                UserRef.userData.setState_ble("0001");
-                                UserRef.userDataRef.setValue(UserRef.userData);
-                            }
-                            else if(miner.equals("272")){
-                                UserRef.userData.setState_ble("0010");
-                                UserRef.userDataRef.setValue(UserRef.userData);
-                            }
-                            else if(miner.equals("273")){
-                                UserRef.userData.setState_ble("0011");
-                                UserRef.userDataRef.setValue(UserRef.userData);
-                            }
-
+                        } else {
+                            //beaconConnected = false;
+                            mBeaconConnectList.add(false);
                         }
 
-
-
-
                     }
+                } else {
+                    //beaconConnected = false;
+                    mBeaconConnectList.add(false);
                 }
             }
 
@@ -708,11 +852,59 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         });
 
         try {
-            beaconManager.startRangingBeaconsInRegion(new Region("myRangingUniqueId", null, null, null));
+            beaconManager.startRangingBeaconsInRegion(new Region(target_uuid, null, null, null));
         } catch (RemoteException e) {
             Log.d(TAG, e.toString());
         }
 
+  /*      beaconManager.addMonitorNotifier(new MonitorNotifier() {
+            @Override
+            public void didEnterRegion(Region region) {
+
+                Log.d(TAG, "didEnterRegion");
+
+
+            }
+
+            @Override
+            public void didExitRegion(Region region) {
+
+                Log.d(TAG, "didExitRegion");
+
+            }
+
+            @Override
+            public void didDetermineStateForRegion(int i, Region region) {
+                Log.d(TAG, "didDetermineStateForRegion");
+
+            }
+        });
+
+        beaconManager.addRangeNotifier(new RangeNotifier() {
+            @Override
+            public void didRangeBeaconsInRegion(Collection<Beacon> beacons, Region region) {
+                for (Beacon beacon : beacons){
+                    Log.d(TAG, "didRangeBeaconsInRegion : distance: " +
+                            beacon.getDistance() + "id: " +
+                            beacon.getId1() + "/" +
+                            beacon.getId2() + "/" +
+                            beacon.getId3());
+                }
+            }
+        });
+
+        try {
+            beaconManager.startRangingBeaconsInRegion(new Region(target_uuid, null, null, null));
+        } catch (RemoteException e) {
+            Log.d(TAG, e.toString());
+        }
+
+        try {
+            beaconManager.startMonitoringBeaconsInRegion(new Region(target_uuid, null, null, null));
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+*/
     }
 
 
@@ -920,7 +1112,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                 }
             }
 
-//            Log.d(TAG,"AnalyzeFFT : best_frequency : " + best_frequency);
+            //Log.d(TAG,"AnalyzeFFT : best_frequency : " + best_frequency);
 //            Log.d(TAG,"AnalyzeFFT : bestAmplitude : " + bestAmplitude);
 
             if( best_frequency > 13500 ) {

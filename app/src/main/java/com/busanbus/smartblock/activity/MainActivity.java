@@ -60,7 +60,7 @@ public class MainActivity extends AppCompatActivity {
 
         pref = getSharedPreferences("pref", MODE_PRIVATE);
 
-//        checkPermission();
+        checkPermission();
         getUserData();
         listenerSet();
 
