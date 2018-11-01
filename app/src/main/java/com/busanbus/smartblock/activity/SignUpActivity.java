@@ -363,8 +363,14 @@ public class SignUpActivity extends AppCompatActivity {
         editor.apply();
 
         Toast.makeText(getApplicationContext(), "로그인 성공", Toast.LENGTH_SHORT).show();
-        Intent svc = new Intent(this, LoginService.class);
-        startService(svc);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent svc = new Intent(this, LoginService.class);
+            startForegroundService(svc);
+        } else {
+            Intent svc = new Intent(this, LoginService.class);
+            startService(svc);
+        }
+
         finish();
 
     }

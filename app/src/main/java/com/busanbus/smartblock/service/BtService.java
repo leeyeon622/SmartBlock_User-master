@@ -11,6 +11,7 @@ import android.graphics.Bitmap;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.PowerManager;
@@ -67,7 +68,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
     private boolean mBlock = false;
     private boolean mLocationRunning = false;
     Notification mNoti = null;
-    private final double STAND_STILL = 1.0;
+    private final double STAND_STILL = 10.0;
 
     @Nullable
     @Override
@@ -87,7 +88,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
         //    Log.d(TAG, "screen off : stopSelf");
         //    stopSelf();
         //} else {
-
+/*
             if(mNoti ==  null ) {
                 mNoti = new NotificationCompat.Builder(this)
                         .setContentTitle("SmartBlock")
@@ -102,7 +103,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
 
 
             }
-
+*/
         //}
 
 
@@ -115,6 +116,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
     @Override
     public void onCreate() {
         super.onCreate();
+        startForeground(2,new Notification());
 
         Log.d(TAG, "onCreate");
 
@@ -236,8 +238,14 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
 
     private void startBlockService() {
         Log.d(TAG, "startBlockService");
-        Intent svc = new Intent(this, BlockService.class);
-        startService(svc);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent svc = new Intent(this, BlockService.class);
+            startForegroundService(svc);
+        } else {
+            Intent svc = new Intent(this, BlockService.class);
+            startService(svc);
+        }
+
 
         if(UserRef.allowUserDrivingUpdate) {
 
@@ -376,7 +384,7 @@ public class BtService extends Service implements SharedPreferences.OnSharedPref
             mLocationRunning = true;
 
             mSpeedList.add(mySpeed);
-            //mSpeedList.add(10.0);
+             //mSpeedList.add(10.0);
 
             if(mSpeedList.size() > 0) {
 

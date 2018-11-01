@@ -128,8 +128,15 @@ public class MainActivity extends AppCompatActivity {
                 editor.putString("phone", phone);
                 editor.apply();
 
-                Intent svc = new Intent(this, LoginService.class);
-                startService(svc);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Intent svc = new Intent(this, LoginService.class);
+                    startForegroundService(svc);
+                } else {
+                    Intent svc = new Intent(this, LoginService.class);
+                    startService(svc);
+                }
+
+
                 finish();
 
                 return;

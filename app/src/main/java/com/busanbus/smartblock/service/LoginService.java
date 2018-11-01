@@ -1,6 +1,7 @@
 package com.busanbus.smartblock.service;
 
 import android.Manifest;
+import android.app.Notification;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -20,6 +21,7 @@ import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
@@ -42,6 +44,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import com.busanbus.smartblock.R;
 import com.busanbus.smartblock.UserRef;
@@ -75,7 +78,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     ScreenOnReceiver mScreenOnReceiver;
 
 
-    private final static int fftChunkSize = 1024;
+    private final static int fftChunkSize = 0x400;//0x1000;
     private final static int RATE = 44100;
     public final int BUFFER_SIZE = 1024;
     private short[] mAudioData;
@@ -88,6 +91,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     private TimerTask mTask2;
     private Timer mTimer2;
     ArrayList<Double> mfrequencyList = new ArrayList<>();
+    ArrayList<FreqInfo> mFreqInfos = new ArrayList<>();
 
     boolean allow_bt = false;
     boolean allow_location = false;
@@ -163,6 +167,27 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     private TextView debugInfo;
     private TextView stopReason;
 
+    private Thread trd;
+    private RecorderRunnable record;
+
+    class FreqInfo {
+        private double bestFreq;
+        private int bestCount;
+
+        FreqInfo(double freq, int count) {
+            bestFreq = freq;
+            bestCount = count;
+        }
+
+        public double getBestFreq() {
+            return bestFreq;
+        }
+
+        public int getBestCount() {
+            return bestCount;
+        }
+    }
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
@@ -180,19 +205,14 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     @Override
     public void onCreate() {
         super.onCreate();
-
+        startForeground(1,new Notification());
         UserRef ref = new UserRef();
-
         getUserData();
-
         Log.d(TAG, "onCreate : " + " : current thread : " + Thread.currentThread());
-
         mAudioData = new short[BUFFER_SIZE];
-
         //bt ble
         btManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         btAdapter = btManager.getAdapter();
-
         //beacon
         beaconManager = BeaconManager.getInstanceForApplication(this);
 
@@ -203,8 +223,6 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
         beaconManager.setForegroundScanPeriod(1000l);
         beaconManager.bind(this);
-
-
 //        mScreenOnReceiver = new ScreenOnReceiver();
 
 //        IntentFilter filter = new IntentFilter();
@@ -213,21 +231,12 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 //        registerReceiver(mScreenOnReceiver, filter);
 
         checkPermisson();
-
-
         /*
         check frequency value periodically
          */
-
         checkFrequency();
-
-
         PreferenceManager.getDefaultSharedPreferences(this).registerOnSharedPreferenceChangeListener(this);
-
-
-//        startScanning();
-
-//        startRecord();
+        startRecord();
 
 //        Intent svc = new Intent(LoginService.this, BlockService.class);
 //        startService(svc);
@@ -263,7 +272,6 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     }
 
     public void getUserData(){
-
         SharedPreferences pref = getSharedPreferences("pref", MODE_PRIVATE);
         final String phone = pref.getString("phone", "null");
 
@@ -318,75 +326,54 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                 }
 
             }
-
             @Override
             public void onCancelled(@NonNull DatabaseError databaseError) {
 
             }
         });
-
-
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-
         Log.d(TAG, "onDestroy");
-
         beaconManager.unbind(this);
-
+        stopRecord();
         PreferenceManager.getDefaultSharedPreferences(this).unregisterOnSharedPreferenceChangeListener(this);
-
         if(mScreenOnReceiver != null) {
             unregisterReceiver(mScreenOnReceiver);
         }
+        stopForeground(true);
     }
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-
-
         Log.d(TAG, "onSharedPreferenceChanged : " + key );
-
         if("speed_info".equals(key)) {
-
             String info = sharedPreferences.getString(key, "error");
             //debugInfo.setText(info);
-
         }
-
         if("stop_reason".equals(key)) {
             String info = sharedPreferences.getString(key, "error");
             //stopReason.setText(info);
         }
-
-
 //        Intent svc = new Intent(this, BtService.class);
 //        svc.putExtra("key", key);
 //        startService(svc);
     }
 
     public void startRecord() {
-
         Log.d(TAG, "startRecord : started : " + started );
-
         if(checkMicPermission()) {
-
             if(started == false) {
                 started = true;
                 mRecordAudio = new RecordAudio();
                 mRecordAudio.execute();
             }
-
         }
-
-
-
     }
 
     public void stopRecord() {
-
         Log.d(TAG, "stopRecord " );
         started = false;
         if(mRecordAudio != null) {
@@ -400,42 +387,34 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         mTask = new TimerTask() {
             @Override
             public void run() {
-
                 checkPermisson();
-
-//                bleCheckCount++;
-
-                Log.d(TAG, "mTask : run : thead " + Thread.currentThread());
-                //Log.d(TAG, "mTask : run : beaconConnected : " + beaconConnected);
-
-
+                //Log.d(TAG, "mTask : run : thead " + Thread.currentThread());
                 for(int i = 0; i < mBeaconConnectList.size(); i++) {
                     beaconConnected = mBeaconConnectList.get(i);
                     if(beaconConnected == true) break;
                 }
-
                 if(beaconConnected) {
                     Log.d(TAG, "mTask : run : beaconConnected : " + beaconConnected);
                     PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", false).apply();
                     String reason = "none";
                     PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
-                    Intent svc = new Intent(LoginService.this, BtService.class);
-                    startService(svc);
-
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        Intent svc = new Intent(LoginService.this, BtService.class);
+                        startForegroundService(svc);
+                    } else {
+                        Intent svc = new Intent(LoginService.this, BtService.class);
+                        startService(svc);
+                    }
                     if(allowUserDataUpdate) {
-
                         if(!isLogin){
                             UserRef.userData.setTime_login(getCurTime());
                             UserRef.userDataRef.setValue(UserRef.userData);
 
                         }
-
                         if(allowUserDrivingUpdate) {
                             UserRef.userDriveData.setTime_logout("-");
                             UserRef.userDriveRef.setValue(UserRef.userDriveData);
                         }
-
-
                         if(mMinor.equals("256")){
                             UserRef.userData.setState_ble("0000");
                             UserRef.userDataRef.setValue(UserRef.userData);
@@ -452,271 +431,145 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                             UserRef.userData.setState_ble("0011");
                             UserRef.userDataRef.setValue(UserRef.userData);
                         }
-
                     }
-
-
-
                     isLogin = true;
-
                 } else {
-                    Log.d(TAG, "mTask : run : not beaconConnected");
-
-                    Log.d(TAG, "mTask : run : " + final_apart + " : " + final_batt + " : " + final_normal);
-
+                    Log.d(TAG, "mTask : run not beaconConnected : " + final_apart + " : " + final_batt + " : " + final_normal);
+                    if(allowUserDataUpdate) {
+                        UserRef.userData.setState_ble("-");
+                        UserRef.userDataRef.setValue(UserRef.userData);
+                    }
                     if((final_apart == false) && (final_batt == false) && (final_normal == false)) {
-
                         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
                         String reason = "beacon is not connected && frequency is out of scope";
                         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
-                    }
 
+                        if(allowUserDataUpdate) {
+                            UserRef.userData.setState_frequency("-");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        }
+                        if(allowUserDrivingUpdate) {
+                            UserRef.userDriveData.setTime_logout(getCurTime());
+                            UserRef.userDriveRef.setValue(UserRef.userDriveData);
+                        }
+                    }
                     isLogin = false;
-
-                    if(allowUserDataUpdate) {
-                        UserRef.userData.setState_frequency("-");
-                        UserRef.userData.setState_ble("-");
-                        UserRef.userDataRef.setValue(UserRef.userData);
-
-
-                    }
-
-                    if(allowUserDrivingUpdate) {
-                        UserRef.userDriveData.setTime_logout(getCurTime());
-                        UserRef.userDriveRef.setValue(UserRef.userDriveData);
-                    }
-
                 }
-
                 mBeaconConnectList.clear();
-
-//                mfrequencyList.clear();
-
-
-//                startRecord();
-
-                //beaconManager.unbind(LoginService.this);
-
-                //beaconManager.bind(LoginService.this);
-//                if(discoveredDev == null || (bleCheckCount%3 == 0 && bleConnected == false) ){
-//
-//                    startScanning();
-//                } else if(bluetoothGatt == null) {
-//                    connectToDevice();
-//                }
-
             }
         };
 
         mTask2 = new TimerTask() {
             @Override
             public void run() {
-                Log.d(TAG, "mTask2 : run : thread : " + Thread.currentThread());
+                //Log.d(TAG, "mTask2 : run : thread : " + Thread.currentThread());
 
                 final_apart = false;
                 final_batt = false;
                 final_normal = false;
-                boolean found = false;
 
-                if(mfrequencyList.size() > 0) {
-                    Log.d(TAG, "mTask2 : run : frequency size : " + mfrequencyList.size() );
+                if(mFreqInfos.size() > 0) {
+                    Log.d(TAG, "mTask2 : run : mFreqInfos size : " + mFreqInfos.size() );
 
-                    //for(int i=0;i < mfrequencyList.size(); i++) {
-                    //    Log.d(TAG, "mTask2 : run : frequency : " + mfrequencyList.get(i) );
-                    //}
+                    double best_freq = 0.0;
+                    int best_count = 0;
+                    double maxCount_freq = 0.0;
+                    int max_count = 0;
 
-                    boolean state_apart = false;
-                    boolean state_batt = false;
-                    boolean state_normal = false;
-
-
-//                    ArrayList<Double> arr_apart = new ArrayList<>();
-//                    ArrayList<Double> arr_batt = new ArrayList<>();
-//                    ArrayList<Double> arr_normal = new ArrayList<>();
-//
-//                    for(int i=0; i < mfrequencyList.size(); i++){
-////                        Log.d(TAG, "" + mfrequencyList.get(i));
-//
-//                        if(mfrequencyList.get(i)>12500&&mfrequencyList.get(i)<14500){
-//                            if(arr_apart.contains(mfrequencyList.get(i)))
-//                                state_apart = true;
-//                            else
-//                                arr_apart.add(mfrequencyList.get(i));
-//                        }
-//                        if(mfrequencyList.get(i)>15300&&mfrequencyList.get(i)<18000){
-//                            if(arr_batt.contains(mfrequencyList.get(i)))
-//                                state_batt = true;
-//                            else
-//                                arr_batt.add(mfrequencyList.get(i));
-//                        }
-//                        if(mfrequencyList.get(i)>18300&&mfrequencyList.get(i)<21000){
-//                            if(arr_normal.contains(mfrequencyList.get(i)))
-//                                state_normal = true;
-//                            else
-//                                arr_normal.add(mfrequencyList.get(i));
-//                        }
-//
-//
-//                    }
-
-
-                    for(int i=0; i < mfrequencyList.size(); i++){
-                        double freq = mfrequencyList.get(i);
-
-                        Log.d(TAG, "mTask2 : i : " + i + ", freq : " + freq);
-
-                        state_apart = false;
-                        state_batt = false;
-                        state_normal = false;
-
-                        if(freq == 0.0)
-                            continue;
-
-                        mfrequencyList.set(i, 0.0);
-
-                        if(freq>12500.0 && freq<15300.0){
-
-                            state_apart = true;
-                            Log.d(TAG, "mTask2 : state_apart");
-
-                        } else if(freq>15300.0 && freq<18300.0){
-
-                             state_batt = true;
-                             Log.d(TAG, "mTask2 : state_batt");
-
-                        } else if(freq>18300.0 && freq<22000.0){
-
-                             state_normal = true;
-                            Log.d(TAG, "mTask2 : state_normal");
-
-                        } else {
-                            Log.d(TAG, "mTask2 : out of bound");
-                            continue;
-                        }
-
-                        int count = 0;
-
-                        for(int j = i+1;j < mfrequencyList.size();j++) {
-
-                            double freq2 = mfrequencyList.get(j);
-                            Log.d(TAG, "mTask2 : i : " + i + ", freq : " + freq + ", j : " + j + ", freq2 : " + freq2 + ", count : " + count);
-
-                            if(freq2 == 0.0)
-                                continue;
-
-                            if(freq == freq2) {
-
-                                mfrequencyList.set(j, 0.0);
-
-                                count++;
-
-                                if(count < 5)
-                                    continue;
-
-                                if(state_apart) {
-
-                                    final_apart = true;
-                                    found = true;
-                                    Log.d(TAG, "mTask2 : final_apart");
-                                    break;
-
-                                }
-
-                                if(state_batt) {
-
-                                    final_batt = true;
-                                    found = true;
-                                    Log.d(TAG, "mTask2 : final_batt");
-                                    break;
-
-                                }
-
-                                if(state_normal) {
-
-                                    final_normal = true;
-                                    found = true;
-                                    Log.d(TAG, "mTask2 : final_normal");
-                                    break;
-
-                                }
-
+                    for(int i=0;i < mFreqInfos.size(); i++) {
+                        double freq_i = 0.0;
+                        int count_i = 0;
+                        FreqInfo info_i = mFreqInfos.get(i);
+                        double val0 = info_i.getBestFreq();
+                        Log.d(TAG, "mTask2 : run : mFreqInfos frequency : " + info_i.getBestFreq() + " : mFreqInfos count : " + info_i.getBestCount());
+                        for(int j=i+1; j < mFreqInfos.size(); j++) {
+                            FreqInfo info_j = mFreqInfos.get(j);
+                            double val1 = info_j.getBestFreq();
+                            if(val0 == val1) {
+                                count_i++;
                             }
-
                         }
+                        if(count_i > best_count) {
+                            best_count = count_i;
+                            best_freq = val0;
+                        }
+                        if(info_i.getBestCount() > max_count) {
+                            max_count = info_i.getBestCount();
+                            maxCount_freq = info_i.getBestFreq();
+                        }
+                    }
+                    Log.d(TAG, "mTask2 : run : best frequency : " + best_freq + " : best count : " + best_count);
+                    Log.d(TAG, "mTask2 : run : max frequency : " + maxCount_freq + " : max count : " + max_count);
 
-                        if(found)
-                            break;
-
+                    double final_freq = 0.0;
+                    if(best_freq > 0.0) {
+                        final_freq = best_freq;
+                    } else {
+                        final_freq = maxCount_freq;
                     }
 
+                    if(final_freq > 13000.0 && final_freq < 15300.0){
+                        final_apart = true;
+                    } else if(final_freq >= 15300.0 && final_freq < 18300.0){
+                        final_batt = true;
+                    } else if(final_freq >= 18300.0 && final_freq < 22000.0){
+                        final_normal = true;
+                    } else {
+                        final_normal = true;
+                    }
 
                     if(allowUserDataUpdate) {
-                        if(isLogin){
-                            if(final_normal){
-                                UserRef.userData.setState_frequency("19500");
-                                UserRef.userDataRef.setValue(UserRef.userData);
-                            }
-
-                            if(final_apart){
-                                UserRef.userData.setState_frequency("16500");
-                                UserRef.userDataRef.setValue(UserRef.userData);
-                            }
-
-                            if(final_batt){
-                                UserRef.userData.setState_frequency("13500");
-                                UserRef.userDataRef.setValue(UserRef.userData);
-                            }
-
+                        if(!isLogin){
+                            UserRef.userData.setTime_login(getCurTime());
+                            UserRef.userDataRef.setValue(UserRef.userData);
                         }
-
+                        if(final_normal){
+                            UserRef.userData.setState_frequency("19500");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        } else if(final_apart){
+                            UserRef.userData.setState_frequency("16500");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        } else if(final_batt){
+                            UserRef.userData.setState_frequency("13500");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        }
                     }
-
-
-
-                    Log.d(TAG, "mTask2 : " + final_apart + " : " + final_batt + " : " + final_normal );
-
+                    isLogin = true;
+                    Log.d(TAG, "mTask2 : " + final_apart + " : " + final_batt + " : " + final_normal);
                     if(final_apart || final_batt || final_normal) {
                         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", false).apply();
                         String reason = "none";
                         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
-                        Intent svc = new Intent(LoginService.this, BtService.class);
-                        startService(svc);
-                    } else {
-
-                            Log.d(TAG, "mTask2 :  beaconConnected : " + beaconConnected);
-
-                        if(beaconConnected == false) {
-                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
-                            String reason = "frequency is out of scope && beacon is not connected";
-                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            Intent svc = new Intent(LoginService.this, BtService.class);
+                            startForegroundService(svc);
+                        } else {
+                            Intent svc = new Intent(LoginService.this, BtService.class);
+                            startService(svc);
                         }
-
                     }
-
                 } else {
-                    Log.d(TAG, "mTask2 : run : no frequency");
-
-                    Log.d(TAG, "mTask2 : beaconConnected : " + beaconConnected);
-
+                     Log.d(TAG, "mTask2 : no frequency beaconConnected : " + beaconConnected);
+                    if(allowUserDataUpdate) {
+                        UserRef.userData.setState_frequency("-");
+                        UserRef.userDataRef.setValue(UserRef.userData);
+                    }
                     if(beaconConnected == false) {
                         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
                         String reason = "there is no frequency && beacon is not connected";
                         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putString("stop_reason", reason).apply();
+                        if(allowUserDataUpdate) {
+                            UserRef.userData.setState_ble("-");
+                            UserRef.userDataRef.setValue(UserRef.userData);
+                        }
+                        if(allowUserDrivingUpdate) {
+                            UserRef.userDriveData.setTime_logout(getCurTime());
+                            UserRef.userDriveRef.setValue(UserRef.userDriveData);
+                        }
                     }
+                    isLogin = false;
                 }
-
-                mfrequencyList.clear();
-
-
-                startRecord();
-
-//                if(discoveredDev == null){
-//
-//                    startScanning();
-//                } else if(bluetoothGatt == null) {
-//                    connectToDevice();
-//                }
-
+                mFreqInfos.clear();
             }
         };
 
@@ -724,7 +577,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         mTimer.schedule(mTask, 3000, 10000);
 
         mTimer2 = new Timer();
-        mTimer2.schedule(mTask2, 3000, 10000);
+        mTimer2.schedule(mTask2, 30000, 30000);
     }
 
     private boolean checkMicPermission() {
@@ -806,49 +659,30 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
             @Override
             public void didRangeBeaconsInRegion(Collection<Beacon> beacons, Region region) {
-
-                Log.d(TAG, "didRangeBeaconsInRegion : beacon size : " + beacons.size());
-
+                //Log.d(TAG, "didRangeBeaconsInRegion : beacon size : " + beacons.size());
                 if (beacons.size() > 0) {
-
                     Iterator it = beacons.iterator();
-
                     while(it.hasNext()) {
-
                         Beacon b = (Beacon)it.next();
-
-                        Log.d(TAG, "to string : " + b.toString());
-
+                        //Log.d(TAG, "to string : " + b.toString());
                         String uuid = b.getId1().toString();
-
-                        Log.d(TAG,  "uuid : " + uuid);
-
+                        //Log.d(TAG,  "uuid : " + uuid);
                         if(target_uuid.equals(uuid)) {
-
                             //beaconConnected = true;
                             mBeaconConnectList.add(true);
-
-                            Log.d(TAG,  " beacon connected ");
-
-
+                            //Log.d(TAG,  " beacon connected ");
                             mMinor = b.getId3().toString();
-
-                            Log.d(TAG,  "miner : " + mMinor);
-
-
+                            //Log.d(TAG,  "miner : " + mMinor);
                         } else {
                             //beaconConnected = false;
                             mBeaconConnectList.add(false);
                         }
-
                     }
                 } else {
                     //beaconConnected = false;
                     mBeaconConnectList.add(false);
                 }
             }
-
-
         });
 
         try {
@@ -915,7 +749,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             if (action.equals(Intent.ACTION_SCREEN_ON)) {
 
 
-                startRecord();
+                //startRecord();
 
 
                 Log.d(TAG, "ACTION_SCREEN_ON");
@@ -926,7 +760,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
             }
             else if (action.equals(Intent.ACTION_SCREEN_OFF)) {
 
-                stopRecord();
+                //stopRecord();
 
                 Log.d(TAG, "ACTION_SCREEN_OFF");
                 PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit().putBoolean("all_stop", true).apply();
@@ -939,41 +773,22 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
     private class RecordAudio extends AsyncTask<Void, Double, Void> {
         @Override
         protected Void doInBackground(Void... params) {
-
-            int bufferSize = BUFFER_SIZE;
-            int minBufferSize = AudioRecord.getMinBufferSize(RATE,
-                    CHANNEL_MODE, ENCODING);
-
-            Log.d(TAG, "RecordAudio : doInBackground : minBufferSize : " + minBufferSize + " : current thread : " + Thread.currentThread());
-
-            if (minBufferSize > bufferSize) {
-                bufferSize = minBufferSize;
+            LinkedBlockingQueue<Integer> samplesReadQueue = new LinkedBlockingQueue<Integer>();
+            record = new RecorderRunnable(samplesReadQueue, RATE, fftChunkSize);
+            trd = new Thread(record);
+            trd.start();
+            short[] audioBuffer;
+            while(started && !Thread.interrupted()) {
+                try {
+                    audioBuffer = record.getLatest(fftChunkSize);
+                } catch (InterruptedException e) {
+                    Log.e(TAG, "InterruptedException for getting audio data.");
+                    e.printStackTrace();
+                    break;
+                }
+                AnalyzeFrequencies(audioBuffer);
             }
-
-            mRecorder = new AudioRecord(MediaRecorder.AudioSource.MIC, RATE, CHANNEL_MODE,
-                    ENCODING, bufferSize);
-
-            if (mRecorder.getState() != AudioRecord.STATE_INITIALIZED) {
-
-                Log.d(TAG, "RecordAudio : doInBackground : not STATE_INITIALIZED");
-                return null;
-            }
-
-            mRecorder.startRecording();
-            Log.d(TAG, "RecordAudio : doInBackground : startRecording");
-
-            while(started) {
-
-                int bufferReadResult = mRecorder.read(mAudioData, 0, BUFFER_SIZE);
-
-                AnalyzeFrequencies(mAudioData);
-
-            }
-
             Log.d(TAG, "RecordAudio : doInBackground : RecorderRunnable stopping recording.");
-            mRecorder.stop();
-            mRecorder.release();
-
             return null;
         }
 
@@ -990,23 +805,17 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         }
 
         public int AnalyzeFrequencies(short[] audio_data) {
-
 //            Log.d(TAG,"AnalyzeFrequencies ");
-
             if (audio_data.length * 2 < 0) {
                 Log.e(TAG, "awkward fail: " + (audio_data.length * 2));
             }
-
             double[] frequencyData = new double[audio_data.length * 2];
-
             for (int i = 0; i < audio_data.length; i++) {
                 frequencyData[i * 2] = audio_data[i];
                 frequencyData[i * 2 + 1] = 0;
             }
-
             //audio signal to 주파수 데이터
             DoFFT(frequencyData, audio_data.length);
-
             return AnalyzeFFT(audio_data.length, frequencyData);
         }
 
@@ -1069,10 +878,7 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
         }
 
         public int AnalyzeFFT(int audioDataLength, double[] frequencyData) {
-
 //            Log.d(TAG,"AnalyzeFFT : audioDataLength : " + audioDataLength);
-
-
             double best_frequency = 0;
             double bestAmplitude = 0;
 
@@ -1080,30 +886,20 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
                     * audioDataLength / RATE);
             final int max_frequency_fft = (int) Math.round(1.0 * MAX_FREQUENCY
                     * audioDataLength / RATE);
-
 //            Log.d(TAG,"AnalyzeFFT : min_frequency_fft : " + min_frequency_fft + " : max_frequency_fft : " + max_frequency_fft);
 
             //가장 높은 주파수 찾기
             for (int i = min_frequency_fft; i <= max_frequency_fft; i++) {
 
                 final double currentFrequency = i * 1.0 * RATE / audioDataLength;
-
-
-
                 final double current_amplitude = Math.pow(frequencyData[i * 2], 2)
                         + Math.pow(frequencyData[i * 2 + 1], 2);
-
-
-
                 final double normalizedAmplitude = Math.pow(current_amplitude, 0.5)
                         / currentFrequency;
-
-
                 // find peaks
                 // NOTE: this finds all the relevant peaks because their
                 // amplitude usually keeps rising with the frequency.
                 if (normalizedAmplitude > bestAmplitude) {
-
                     // it's important to note the best_amplitude also for noise
                     // level measurement.
                     best_frequency = currentFrequency;
@@ -1111,16 +907,41 @@ public class LoginService extends Service implements SharedPreferences.OnSharedP
 
                 }
             }
-
             //Log.d(TAG,"AnalyzeFFT : best_frequency : " + best_frequency);
 //            Log.d(TAG,"AnalyzeFFT : bestAmplitude : " + bestAmplitude);
-
-            if( best_frequency > 13500 ) {
+            if( best_frequency > 13000 ) {
                 mfrequencyList.add(best_frequency);
-
-
             }
 
+            if(mfrequencyList.size() > 100) {
+                int bestCount = 0;
+                double bestFrequency = 0.0;
+                for(int i=0; i< mfrequencyList.size(); i++) {
+                    int count = 0;
+                    double freq = 0.0;
+                    int noiseCount = 0;
+                    double val0 = mfrequencyList.get(i);
+                    for(int j=i+1; j<mfrequencyList.size(); j++) {
+                        double val1 = mfrequencyList.get(j);
+                        if(val0 == val1) {
+                            noiseCount = 0;
+                            count++;
+                        } else {
+                            noiseCount++;
+                        }
+                        if(noiseCount == 2) break;
+                    }
+                    if(count > bestCount) {
+                        bestCount = count;
+                        bestFrequency = val0;
+                    }
+                }
+                mfrequencyList.clear();
+                Log.d(TAG,"AnalyzeFFT : best_frequency : " + bestFrequency + " : best_count : " + bestCount);
+                if(bestCount > 3) {
+                    mFreqInfos.add(new FreqInfo(bestFrequency, bestCount));
+                }
+            }
             return 1;
         }
     }

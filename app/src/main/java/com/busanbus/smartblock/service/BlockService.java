@@ -1,10 +1,12 @@
 package com.busanbus.smartblock.service;
 
+import android.app.Notification;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.PixelFormat;
+import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.preference.PreferenceManager;
@@ -58,6 +60,7 @@ public class BlockService extends Service implements View.OnTouchListener, Share
     @Override
     public void onCreate() {
         super.onCreate();
+        startForeground(3,new Notification());
 
         Log.d(TAG, "onCreate");
 
@@ -86,28 +89,48 @@ public class BlockService extends Service implements View.OnTouchListener, Share
 
         removeOverlayView();
 
-
+        stopForeground(true);
     }
 
     private void addOverlayView() {
 
         Log.d(TAG, "addOverlayView");
 
-        final WindowManager.LayoutParams params =
-                new WindowManager.LayoutParams(
-                        WindowManager.LayoutParams.MATCH_PARENT,
-                        WindowManager.LayoutParams.MATCH_PARENT,
-                        WindowManager.LayoutParams.TYPE_PHONE,
-                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                        PixelFormat.TRANSLUCENT);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            final WindowManager.LayoutParams params =
+                    new WindowManager.LayoutParams(
+                            WindowManager.LayoutParams.MATCH_PARENT,
+                            WindowManager.LayoutParams.MATCH_PARENT,
+                            WindowManager.LayoutParams.TYPE_PHONE,
+                            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                            PixelFormat.TRANSLUCENT);
 
-        params.gravity = Gravity.CENTER | Gravity.START;
-        params.x = 0;
-        params.y = 0;
+            params.gravity = Gravity.CENTER | Gravity.START;
+            params.x = 0;
+            params.y = 0;
 
-        floatyView = ((LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE)).inflate(R.layout.floating_view, null);
-        floatyView.setOnTouchListener(this);
-        wm.addView(floatyView, params);
+            floatyView = ((LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE)).inflate(R.layout.floating_view, null);
+            floatyView.setOnTouchListener(this);
+            wm.addView(floatyView, params);
+
+        } else {
+            final WindowManager.LayoutParams params =
+                    new WindowManager.LayoutParams(
+                            WindowManager.LayoutParams.MATCH_PARENT,
+                            WindowManager.LayoutParams.MATCH_PARENT,
+                            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                            PixelFormat.TRANSLUCENT);
+
+            params.gravity = Gravity.CENTER | Gravity.START;
+            params.x = 0;
+            params.y = 0;
+
+            floatyView = ((LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE)).inflate(R.layout.floating_view, null);
+            floatyView.setOnTouchListener(this);
+            wm.addView(floatyView, params);
+        }
+
     }
 
     private void removeOverlayView() {
